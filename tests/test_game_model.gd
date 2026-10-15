@@ -216,3 +216,99 @@ func test_load_tolerates_garbage() -> void:
 	check_eq(m.phase, Balance.PHASES.size(), "Phase begrenzt")
 	m.from_dict({})
 	check_eq(m.phase, 1, "Leerer Stand -> Startwerte")
+
+
+func _shop_model() -> GameModel:
+	var m := _model()
+	m.phase = 2
+	m.money = BigNumber.of(10000.0)
+	return m
+
+
+func test_phase_one_to_two() -> void:
+	var m := _model()
+	var def := m.phase_def()
+	m.reputation = BigNumber.of(def["goal_rep"])
+	m.money = BigNumber.of(float(def["goal_money"]) + 1000.0)
+	check(not m.shop_open(), "Laden in Phase 1 zu")
+	check(m.advance_phase(), "Aufstieg in Phase 2")
+	check_eq(m.phase, 2, "Phase 2")
+	check(m.shop_open(), "Laden offen")
+	check(m.stock_total() > 0, "Startbestand automatisch bestellt")
+	check(m.money.lt(BigNumber.of(1000.0)), "Miete und Ware bezahlt")
+	check(m.upgrade_unlocked("salesperson"), "Laden-Ausbau freigeschaltet")
+
+
+func test_shop_sale() -> void:
+	var m := _shop_model()
+	m._restock()
+	check_eq(m.stock_of("city"), m.shop_capacity(), "Nur Citybike freigeschaltet: Lager voll damit")
+	check(m.sell().is_empty(), "Ohne Kundschaft kein Verkauf")
+	m.shop_queue.append({"bike": "city", "wait": 10.0})
+	var money_before := m.money.to_float()
+	var reward := m.sell()
+	check(not reward.is_empty(), "Verkauf")
+	check_eq(m.run_sales, 1, "Verkauf gezählt")
+	check(m.shop_queue.is_empty(), "Kundschaft bedient")
+	check_eq(m.stock_of("city"), m.shop_capacity(), "Sofort nachbestellt")
+	var b := Balance.bike("city")
+	check_near(m.money.to_float(), money_before + float(b["sell"]) - float(b["buy"]), 1e-9, "Gewinn = Verkauf − Einkauf")
+	check(m.reputation.to_float() > 0.0, "Ruf aus Verkauf")
+
+
+func test_shop_customers_and_staff() -> void:
+	var m := _shop_model()
+	for i in 600:
+		m.tick(0.1)
+	check(m.shop_queue.size() + m.missed_customers > 0, "Kundschaft kommt")
+	check_eq(m.run_sales, 0, "Ohne Verkäufer kein automatischer Verkauf")
+	m.upgrades["salesperson"] = 5
+	for i in 600:
+		m.tick(0.1)
+	check(m.run_sales > 0, "Verkäufer verkauft")
+
+
+func test_assortment_and_unlocks() -> void:
+	var m := _shop_model()
+	check(not m.bike_unlocked("road"), "Rennrad braucht Ruf")
+	m.reputation = BigNumber.of(10000.0)
+	m.upgrades["storage"] = 2
+	m._restock()
+	check(m.stock_of("road") > 0, "Rennrad im Lager")
+	m.set_assortment("city", false)
+	check(not m.in_assortment("city"), "Ausgelistet")
+	m.stock["city"] = 0
+	m._restock()
+	check_eq(m.stock_of("city"), 0, "Ausgelistetes wird nicht nachbestellt")
+	check(m.stock_total() <= m.shop_capacity(), "Lager nie über Kapazität")
+	m.shop_queue.append({"bike": "city", "wait": 1.0})
+	m.tick(1.5)
+	check(m.missed_customers >= 1, "Ungeduldige Kundschaft geht")
+
+
+func test_shop_offline_and_save() -> void:
+	var m := _shop_model()
+	var report := m.apply_offline(3600.0)
+	check_eq(report["sales"], 0, "Ohne Verkäufer kein Offline-Verkauf")
+	m.upgrades["salesperson"] = 3
+	report = m.apply_offline(3600.0)
+	check(report["sales"] > 0, "Verkäufer verkauft offline")
+	m._restock()
+	m.shop_queue.append({"bike": "city", "wait": 5.0})
+	m.set_assortment("city", false)
+	var copy := GameModel.new(9)
+	copy.from_dict(JSON.parse_string(JSON.stringify(m.to_dict(), "", false, true)))
+	check_eq(copy.stock, m.stock, "Lager gespeichert")
+	check_eq(copy.shop_queue.size(), 1, "Warteschlange gespeichert")
+	check(not copy.in_assortment("city"), "Sortiment gespeichert")
+	check_eq(copy.run_sales, m.run_sales, "Verkäufe gespeichert")
+
+
+func test_phase_two_goal_needs_knowhow() -> void:
+	var m := _shop_model()
+	var def := m.phase_def()
+	m.reputation = BigNumber.of(def["goal_rep"])
+	m.money = BigNumber.of(def["goal_money"])
+	check(not m.phase_goal_met(), "Ohne Know-how nicht erreicht")
+	m.knowhow = BigNumber.of(def["goal_knowhow"])
+	check(m.phase_goal_met(), "Mit Know-how erreicht")

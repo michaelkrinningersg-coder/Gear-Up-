@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Gear Up!"
 config/description="Incremental-Spiel: vom Hinterhof-Schrauber zum WorldTour-Team."
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/main.tscn"
 run/low_processor_mode=true
 config/features=PackedStringArray("4.5", "GL Compatibility")

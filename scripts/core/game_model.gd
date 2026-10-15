@@ -7,6 +7,7 @@ signal board_changed
 signal upgrades_changed
 signal order_completed(order: Dictionary, reward: Dictionary, by_apprentice: bool)
 signal customer_tier_changed(tier: int)
+signal sale_completed(bike_id: String, reward: Dictionary, by_staff: bool)
 signal phase_changed
 signal run_reset
 
@@ -27,6 +28,15 @@ var apprentice_order: Dictionary = {}
 var apprentice_progress := 0.0
 var run_time := 0.0
 var run_orders := 0
+# Radladen (Phase 2)
+var stock: Dictionary = {}
+## Modelle, die bewusst nicht nachbestellt werden (id -> true).
+var shop_disabled: Dictionary = {}
+var shop_queue: Array[Dictionary] = []
+var shop_arrivals := 0.0
+var shop_serve_progress := 0.0
+var run_sales := 0
+var missed_customers := 0
 
 # --- Dauerhaft -----------------------------------------------------------------
 
@@ -65,6 +75,13 @@ func reset_run() -> void:
 	apprentice_progress = 0.0
 	run_time = 0.0
 	run_orders = 0
+	stock = {}
+	shop_disabled = {}
+	shop_queue.clear()
+	shop_arrivals = 0.0
+	shop_serve_progress = 0.0
+	run_sales = 0
+	missed_customers = 0
 	_last_tier = customer_tier()
 	board.clear()
 	_fill_board()
@@ -111,7 +128,8 @@ func tap_power() -> float:
 
 
 func apprentice_rate() -> float:
-	return _upgrade_value("apprentice") * upgrade_level("apprentice") * speed_mult()
+	var benches := 1.0 + _upgrade_value("workbenches") * upgrade_level("workbenches")
+	return _upgrade_value("apprentice") * upgrade_level("apprentice") * speed_mult() * benches
 
 
 func money_mult() -> float:
@@ -195,6 +213,8 @@ func tap() -> Dictionary:
 func tick(delta: float) -> void:
 	run_time += delta
 	total_time += delta
+	if shop_open():
+		_tick_shop(delta)
 	var rate := apprentice_rate()
 	if rate <= 0.0:
 		return
@@ -250,6 +270,187 @@ func _gain(reward: Dictionary) -> void:
 			order["tier"] = tier
 		customer_tier_changed.emit(tier)
 		board_changed.emit()
+
+
+# --- Radladen (Phase 2) --------------------------------------------------------
+
+func shop_open() -> bool:
+	return phase >= 2
+
+
+func bike_unlocked(id: String) -> bool:
+	return reputation.gte(BigNumber.of(Balance.bike(id)["requires_rep"]))
+
+
+func in_assortment(id: String) -> bool:
+	return bike_unlocked(id) and not shop_disabled.has(id)
+
+
+func set_assortment(id: String, enabled: bool) -> void:
+	if enabled:
+		shop_disabled.erase(id)
+		_restock()
+	else:
+		shop_disabled[id] = true
+
+
+func shop_capacity() -> int:
+	return Balance.SHOP_BASE_CAPACITY + int(_upgrade_value("storage") * upgrade_level("storage"))
+
+
+func stock_of(id: String) -> int:
+	return int(stock.get(id, 0))
+
+
+func stock_total() -> int:
+	var total := 0
+	for id in stock:
+		total += int(stock[id])
+	return total
+
+
+func customer_rate() -> float:
+	var rep_factor := 1.0 + Balance.SHOP_REP_CUSTOMER_FACTOR * sqrt(maxf(reputation.to_float(), 0.0))
+	var floor_factor := 1.0 + _upgrade_value("sales_floor") * upgrade_level("sales_floor")
+	var stores := 1.0 + _upgrade_value("second_store") * upgrade_level("second_store")
+	return Balance.SHOP_BASE_CUSTOMERS * rep_factor * floor_factor * stores
+
+
+func salesperson_rate() -> float:
+	return _upgrade_value("salesperson") * upgrade_level("salesperson")
+
+
+func bike_reward(id: String) -> Dictionary:
+	var b := Balance.bike(id)
+	var price := 1.0 + _upgrade_value("bikefitting") * upgrade_level("bikefitting")
+	var rep := 1.0 + _upgrade_value("test_track") * upgrade_level("test_track")
+	return {
+		"money": BigNumber.of(float(b["sell"]) * price * legend_mult()),
+		"rep": BigNumber.of(float(b["rep"]) * rep * reputation_mult()),
+		"knowhow": BigNumber.of(float(b["knowhow"])),
+	}
+
+
+## Index der ersten wartenden Person, deren Wunschrad auf Lager ist (-1 = keine).
+func serviceable_customer() -> int:
+	for i in shop_queue.size():
+		if stock_of(shop_queue[i]["bike"]) > 0:
+			return i
+	return -1
+
+
+## Verkauft an die erste bedienbare Person. Liefert die Belohnung oder {}.
+func sell(by_staff := false) -> Dictionary:
+	var index := serviceable_customer()
+	if index < 0:
+		return {}
+	var bike_id: String = shop_queue[index]["bike"]
+	shop_queue.remove_at(index)
+	stock[bike_id] = stock_of(bike_id) - 1
+	var reward := bike_reward(bike_id)
+	_gain(reward)
+	run_sales += 1
+	sale_completed.emit(bike_id, reward, by_staff)
+	_restock()
+	return reward
+
+
+func _tick_shop(delta: float) -> void:
+	shop_arrivals += customer_rate() * delta
+	while shop_arrivals >= 1.0:
+		shop_arrivals -= 1.0
+		_spawn_customer()
+	for i in range(shop_queue.size() - 1, -1, -1):
+		shop_queue[i]["wait"] = float(shop_queue[i]["wait"]) - delta
+		if shop_queue[i]["wait"] <= 0.0:
+			shop_queue.remove_at(i)
+			missed_customers += 1
+	shop_serve_progress += salesperson_rate() * delta
+	while shop_serve_progress >= 1.0:
+		if serviceable_customer() < 0:
+			# Verkäufer wartet, sammelt aber keine Zeit auf Vorrat an
+			shop_serve_progress = minf(shop_serve_progress, 1.0)
+			break
+		shop_serve_progress -= 1.0
+		sell(true)
+	_restock()
+
+
+func _spawn_customer() -> void:
+	var total := 0.0
+	for b in Balance.BIKES:
+		if bike_unlocked(b["id"]):
+			total += float(b["weight"])
+	var pick := rng.randf() * total
+	var wanted: String = Balance.BIKES[0]["id"]
+	for b in Balance.BIKES:
+		if not bike_unlocked(b["id"]):
+			continue
+		pick -= float(b["weight"])
+		if pick <= 0.0:
+			wanted = b["id"]
+			break
+	if shop_queue.size() < Balance.SHOP_QUEUE_MAX:
+		shop_queue.append({"bike": wanted, "wait": Balance.SHOP_PATIENCE})
+	else:
+		missed_customers += 1
+
+
+## Bestellt automatisch nach: das Lager wird gleichmäßig auf das Sortiment verteilt.
+func _restock() -> void:
+	var assorted: Array[String] = []
+	for b in Balance.BIKES:
+		if in_assortment(b["id"]):
+			assorted.append(b["id"])
+	if assorted.is_empty():
+		return
+	var capacity := shop_capacity()
+	var target := maxi(1, floori(capacity / float(assorted.size())))
+	for id in assorted:
+		var cost := BigNumber.of(Balance.bike(id)["buy"])
+		while stock_of(id) < target and stock_total() < capacity and money.gte(cost):
+			money = money.sub(cost)
+			stock[id] = stock_of(id) + 1
+
+
+## Offline verkauft der Verkäufer gedämpft weiter, solange das Sortiment nachbestellt wird.
+func _offline_shop(seconds: float, report: Dictionary) -> void:
+	if not shop_open() or salesperson_rate() <= 0.0:
+		return
+	var total_weight := 0.0
+	var served_weight := 0.0
+	var profit_sum := 0.0
+	var rep_sum := 0.0
+	var knowhow_sum := 0.0
+	for b in Balance.BIKES:
+		if not bike_unlocked(b["id"]):
+			continue
+		var w := float(b["weight"])
+		total_weight += w
+		if not in_assortment(b["id"]):
+			continue
+		served_weight += w
+		var reward := bike_reward(b["id"])
+		profit_sum += w * (reward["money"].to_float() - float(b["buy"]))
+		rep_sum += w * reward["rep"].to_float()
+		knowhow_sum += w * reward["knowhow"].to_float()
+	if served_weight <= 0.0:
+		return
+	var demand := customer_rate() * served_weight / total_weight
+	var rate := minf(demand, salesperson_rate()) * Balance.OFFLINE_RATE
+	var sales := floorf(rate * seconds)
+	if sales < 1.0:
+		return
+	var gained := {
+		"money": BigNumber.of(profit_sum / served_weight).mul_f(sales),
+		"rep": BigNumber.of(rep_sum / served_weight).mul_f(sales),
+		"knowhow": BigNumber.of(knowhow_sum / served_weight).mul_f(sales),
+	}
+	_gain(gained)
+	run_sales += int(sales)
+	report["sales"] = int(sales)
+	report["money"] = gained["money"]
+	report["rep"] = gained["rep"]
 
 
 # --- Ausbau --------------------------------------------------------------------
@@ -326,7 +527,9 @@ func phase_def() -> Dictionary:
 
 func phase_goal_met() -> bool:
 	var def := phase_def()
-	return reputation.gte(BigNumber.of(def["goal_rep"])) and money.gte(BigNumber.of(def["goal_money"]))
+	return reputation.gte(BigNumber.of(def["goal_rep"])) \
+		and money.gte(BigNumber.of(def["goal_money"])) \
+		and knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0)))
 
 
 func can_advance_phase() -> bool:
@@ -336,8 +539,12 @@ func can_advance_phase() -> bool:
 func advance_phase() -> bool:
 	if not can_advance_phase():
 		return false
-	money = money.sub(BigNumber.of(phase_def()["goal_money"]))
+	var def := phase_def()
+	money = money.sub(BigNumber.of(def["goal_money"]))
+	knowhow = knowhow.sub(BigNumber.of(def.get("goal_knowhow", 0.0)))
 	phase += 1
+	if shop_open():
+		_restock()
 	phase_changed.emit()
 	upgrades_changed.emit()
 	return true
@@ -369,9 +576,12 @@ func prestige() -> BigNumber:
 ## Der Lehrling arbeitet offline mit gedämpfter Rate weiter. Gerechnet wird mit dem
 ## Durchschnitt der schnellen Aufträge, damit auch Tage ohne Schleife gehen.
 func apply_offline(seconds: float) -> Dictionary:
-	var report := {"seconds": seconds, "orders": 0, "money": BigNumber.zero(), "rep": BigNumber.zero()}
+	var report := {"seconds": seconds, "orders": 0, "sales": 0, "money": BigNumber.zero(), "rep": BigNumber.zero()}
+	if seconds <= 0.0:
+		return report
+	_offline_shop(seconds, report)
 	var rate := apprentice_rate() * Balance.OFFLINE_RATE
-	if seconds <= 0.0 or rate <= 0.0:
+	if rate <= 0.0:
 		return report
 	var templates := Balance.templates_of_kind("quick")
 	var tier := customer_tier()
@@ -398,8 +608,8 @@ func apply_offline(seconds: float) -> Dictionary:
 	run_orders += int(count)
 	total_orders += int(count)
 	report["orders"] = int(count)
-	report["money"] = gained["money"]
-	report["rep"] = gained["rep"]
+	report["money"] = report["money"].add(gained["money"])
+	report["rep"] = report["rep"].add(gained["rep"])
 	return report
 
 
@@ -421,6 +631,13 @@ func to_dict() -> Dictionary:
 		"apprentice_progress": apprentice_progress,
 		"run_time": run_time,
 		"run_orders": run_orders,
+		"stock": stock.duplicate(),
+		"shop_disabled": shop_disabled.duplicate(),
+		"shop_queue": shop_queue.duplicate(true),
+		"shop_arrivals": shop_arrivals,
+		"shop_serve_progress": shop_serve_progress,
+		"run_sales": run_sales,
+		"missed_customers": missed_customers,
 		"legend": legend.to_save(),
 		"prestige_count": prestige_count,
 		"lifetime_money": lifetime_money.to_save(),
@@ -452,6 +669,28 @@ func from_dict(d: Dictionary) -> void:
 	apprentice_progress = maxf(0.0, float(d.get("apprentice_progress", 0.0)))
 	run_time = float(d.get("run_time", 0.0))
 	run_orders = int(d.get("run_orders", 0))
+	stock = {}
+	var saved_stock: Variant = d.get("stock")
+	if saved_stock is Dictionary:
+		for id in saved_stock:
+			if not Balance.bike(str(id)).is_empty():
+				stock[str(id)] = maxi(0, int(saved_stock[id]))
+	shop_disabled = {}
+	var saved_disabled: Variant = d.get("shop_disabled")
+	if saved_disabled is Dictionary:
+		for id in saved_disabled:
+			if not Balance.bike(str(id)).is_empty():
+				shop_disabled[str(id)] = true
+	shop_queue.clear()
+	var saved_queue: Variant = d.get("shop_queue")
+	if saved_queue is Array:
+		for c in saved_queue:
+			if c is Dictionary and not Balance.bike(str(c.get("bike", ""))).is_empty() and shop_queue.size() < Balance.SHOP_QUEUE_MAX:
+				shop_queue.append({"bike": str(c["bike"]), "wait": float(c.get("wait", Balance.SHOP_PATIENCE))})
+	shop_arrivals = float(d.get("shop_arrivals", 0.0))
+	shop_serve_progress = float(d.get("shop_serve_progress", 0.0))
+	run_sales = int(d.get("run_sales", 0))
+	missed_customers = int(d.get("missed_customers", 0))
 	legend = BigNumber.from_save(d.get("legend"))
 	prestige_count = int(d.get("prestige_count", 0))
 	lifetime_money = BigNumber.from_save(d.get("lifetime_money"))

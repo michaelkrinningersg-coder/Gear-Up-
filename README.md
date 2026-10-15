@@ -4,7 +4,7 @@ Incremental-Spiel mit leichtem Aufbau-Anteil: vom Hinterhof-Schrauber über Radl
 
 Das Game Design Document liegt als Claude-Doc: *Gear Up! – GDD v0.1*.
 
-## Stand: Meilenstein 1 – Fundament + Phase 1 „Schrauber“
+## Stand: Phase 1 „Schrauber“ und Phase 2 „Radladen“ spielbar
 
 - **Werkstatt:** Auftragsliste mit drei Angeboten (schnell = mehr Ruf, lukrativ = mehr Geld, knifflig = Know-how), Aufträge per Tipp abarbeiten.
 - **Kundschaft:** Mehr Ruf bringt bessere Kundschaft – größere Aufträge, mehr Lohn (Laufkundschaft → Nachbarschaft → Pendler → Rennradler).
@@ -12,7 +12,10 @@ Das Game Design Document liegt als Claude-Doc: *Gear Up! – GDD v0.1*.
 - **Lehrling:** erledigt schnelle Aufträge automatisch, offline mit halber Kraft (zeitlich unbegrenzt).
 - **Know-how-Baum:** Ast „Werkstatt“ (Routine, Spürnase, Meisterhand); die anderen Äste sind als gesperrt sichtbar.
 - **Legende/Prestige:** Legende = 0,02 · √(Gesamtgeld des Runs), +5 % auf Geld und Ruf je Punkt.
-- **Phasenziel:** Fortschritt Richtung „Radladen eröffnen“ (300 Ruf, 50.000 €); Phase 2 folgt in Meilenstein 2.
+- **Phasenziel 1:** „Radladen eröffnen“ (300 Ruf, 50.000 € Miete).
+- **Radladen (Phase 2):** Kundschaft kommt in den Laden und wünscht sich ein Rad; „Verkaufen!“ bedient sie, der Verkäufer automatisch (offline mit halber Kraft). Sortiment aus fünf Rädern (Citybike bis E-Bike, per Ruf freigeschaltet) mit automatischer Nachbestellung; ungeduldige Kundschaft geht wieder.
+- **Ausbau Phase 2:** Verkäufer, Lager, Verkaufsfläche, Probefahrtstrecke, Bikefitting, Werkstattplätze, Zweite Filiale.
+- **Phasenziel 2:** „Ersten eigenen Rahmen bauen“ (1.500 Ruf, 250.000 €, 150 Know-how); Phase 3 folgt.
 - **Technik:** eigener Big-Number-Typ, Autosave alle 30 s, Export/Import als Text, Flat-UI im Hochformat.
 
 ## Projekt öffnen
@@ -37,7 +40,7 @@ godot --path . --resolution 720x1280 res://tools/screenshot.tscn -- --out=/tmp/s
 
 Die Tests laufen auch in GitHub Actions bei jedem Push.
 
-Simulierte Zeit bis zum Phase-1-Ziel (Median aus 3 Läufen): 4 Tipps/s ≈ 14 min, 2 Tipps/s ≈ 25 min, 0,5 Tipps/s ≈ 61 min.
+Simulierte Zeit (Bot, Median): Phase-1-Ziel bei 4 / 2 / 0,5 Tipps/s nach ≈ 14 / 25 / 60 min, Phase-2-Ziel nach ≈ 41 / 60 / 106 min.
 
 ## Aufbau
 
@@ -52,11 +55,16 @@ Simulierte Zeit bis zum Phase-1-Ziel (Median aus 3 Läufen): 4 Tipps/s ≈ 14 mi
 
 ## Android-Export
 
-Im Editor unter *Editor → Exportvorlagen verwalten* die Vorlagen für 4.5 laden, dann *Projekt → Exportieren → Android* anlegen (Android SDK und Debug-Keystore laut [Godot-Doku](https://docs.godotengine.org/de/4.x/tutorials/export/exporting_for_android.html)). Das Projekt nutzt den Compatibility-Renderer und Hochformat.
+Das Exportprofil „Android“ liegt in `export_presets.cfg` (Paket `de.krinninger.gearup`, arm64 + armv7, ohne Gradle). Voraussetzungen: Exportvorlagen 4.5.1, Android SDK (build-tools, platform 35), JDK 17+ und ein Keystore, eingetragen unter *Editor → Editoreinstellungen → Export → Android* ([Godot-Doku](https://docs.godotengine.org/de/4.x/tutorials/export/exporting_for_android.html)).
+
+```bash
+godot --headless --path . --export-debug "Android" export/GearUp.apk
+```
+
+Die Debug-APK lässt sich direkt aufs Handy laden („Installation aus unbekannten Quellen“ erlauben). Für den Play Store braucht es später einen eigenen Release-Keystore.
 
 ## Nächste Meilensteine
 
-1. **Phase 2 – Radladen:** Räder einkaufen und mit Marge verkaufen, Verkaufsfläche, Werkstattplätze, Lager, Personal.
-2. **Phase 3 – Radmarke:** eigene Modelle, Forschungsbaum, Know-how-Äste Technik und Fertigung, Legende-Perk-Baum.
-3. **Reparatur-Minispiel** für knifflige Fälle (Ablauf noch offen im GDD).
-4. Phasen 4–6 (Märkte), danach der Team-Teil (Phasen 7–13).
+1. **Phase 3 – Radmarke:** eigene Modelle, Forschungsbaum, Know-how-Äste Technik und Fertigung, Legende-Perk-Baum.
+2. **Reparatur-Minispiel** für knifflige Fälle (Ablauf noch offen im GDD).
+3. Phasen 4–6 (Märkte), danach der Team-Teil (Phasen 7–13).

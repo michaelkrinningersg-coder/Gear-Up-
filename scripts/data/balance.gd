@@ -52,6 +52,7 @@ const CUSTOMER_TIERS := [
 	{"name": "Nachbarschaft", "rep": 30.0},
 	{"name": "Pendler", "rep": 100.0},
 	{"name": "Rennradler", "rep": 220.0},
+	{"name": "Vereinsfahrer", "rep": 900.0},
 ]
 const TIER_WORK_FACTOR := 3.0
 const TIER_MONEY_FACTOR := 3.3
@@ -84,7 +85,70 @@ const UPGRADES := {
 		"value": 0.2, "base_cost": 200.0, "growth": 2.3,
 		"effect": "+%s %% Arbeitstempo", "effect_scale": 100.0,
 	},
+	# --- Phase 2: Radladen ---
+	"salesperson": {
+		"name": "Verkäufer", "phase": 2,
+		"desc": "Bedient wartende Kundschaft automatisch – auch offline mit halber Kraft.",
+		"value": 0.15, "base_cost": 3000.0, "growth": 1.55,
+		"effect": "%s Verkäufe/s", "effect_scale": 1.0,
+	},
+	"storage": {
+		"name": "Lager", "phase": 2,
+		"desc": "Mehr Stellplätze für Räder auf Vorrat.",
+		"value": 3.0, "base_cost": 2000.0, "growth": 1.6,
+		"effect": "+%s Stellplätze", "effect_scale": 1.0,
+	},
+	"sales_floor": {
+		"name": "Verkaufsfläche", "phase": 2,
+		"desc": "Größerer Laden: mehr Kundschaft kommt herein.",
+		"value": 0.25, "base_cost": 4000.0, "growth": 1.7,
+		"effect": "+%s %% Kundschaft", "effect_scale": 100.0,
+	},
+	"test_track": {
+		"name": "Probefahrtstrecke", "phase": 2, "max_level": 10,
+		"desc": "Wer Probe fährt, erzählt davon: mehr Ruf pro verkauftem Rad.",
+		"value": 0.2, "base_cost": 8000.0, "growth": 1.9,
+		"effect": "+%s %% Ruf pro Verkauf", "effect_scale": 100.0,
+	},
+	"bikefitting": {
+		"name": "Bikefitting", "phase": 2, "max_level": 10,
+		"desc": "Rad perfekt eingestellt: Kundschaft zahlt mehr.",
+		"value": 0.08, "base_cost": 12000.0, "growth": 1.9,
+		"effect": "+%s %% Verkaufspreis", "effect_scale": 100.0,
+	},
+	"workbenches": {
+		"name": "Werkstattplätze", "phase": 2,
+		"desc": "Mehr Plätze für Mechaniker: der Lehrling bekommt Verstärkung.",
+		"value": 0.5, "base_cost": 6000.0, "growth": 1.8,
+		"effect": "+%s %% Lehrling-Tempo", "effect_scale": 100.0,
+	},
+	"second_store": {
+		"name": "Zweite Filiale", "phase": 2, "max_level": 1,
+		"desc": "Ein zweiter Laden in der Nachbarstadt verdoppelt die Kundschaft.",
+		"value": 1.0, "base_cost": 150000.0, "growth": 1.0,
+		"effect": "+%s %% Kundschaft", "effect_scale": 100.0,
+	},
 }
+
+# --- Radladen (Phase 2) ------------------------------------------------------
+
+## Kundschaft pro Sekunde ohne Boni; steigt mit dem Ruf (√-gedämpft).
+const SHOP_BASE_CUSTOMERS := 0.12
+const SHOP_REP_CUSTOMER_FACTOR := 0.03
+const SHOP_BASE_CAPACITY := 4
+const SHOP_QUEUE_MAX := 4
+## Sekunden, die Kundschaft wartet, bevor sie wieder geht.
+const SHOP_PATIENCE := 25.0
+
+## Räder im Sortiment. Kundschaft wünscht sich ein freigeschaltetes Modell
+## nach Gewicht; Know-how kommt aus dem Feedback zu anspruchsvollen Rädern.
+const BIKES := [
+	{"id": "city", "name": "Citybike", "buy": 180.0, "sell": 270.0, "rep": 2.0, "knowhow": 0.0, "requires_rep": 0.0, "weight": 4.0},
+	{"id": "trekking", "name": "Trekkingrad", "buy": 340.0, "sell": 520.0, "rep": 3.0, "knowhow": 0.0, "requires_rep": 350.0, "weight": 3.0},
+	{"id": "mtb", "name": "Mountainbike", "buy": 650.0, "sell": 1000.0, "rep": 4.0, "knowhow": 0.1, "requires_rep": 600.0, "weight": 3.0},
+	{"id": "road", "name": "Rennrad", "buy": 1200.0, "sell": 1900.0, "rep": 6.0, "knowhow": 0.25, "requires_rep": 1000.0, "weight": 2.0},
+	{"id": "ebike", "name": "E-Bike", "buy": 2100.0, "sell": 3300.0, "rep": 8.0, "knowhow": 0.4, "requires_rep": 1400.0, "weight": 2.0},
+]
 
 const KNOWHOW_BRANCHES := [
 	{"id": "workshop", "name": "Werkstatt", "phase": 1, "desc": "Schnellere Reparaturen, mehr knifflige Fälle, höhere Belohnung."},
@@ -123,7 +187,11 @@ const PHASES := [
 		"goal_title": "Radladen eröffnen",
 		"goal_rep": 300.0, "goal_money": 50000.0,
 	},
-	{"name": "Radladen", "playable": false, "goal_title": "Erster eigener Rahmen", "goal_rep": 0.0, "goal_money": 0.0},
+	{
+		"name": "Radladen", "playable": true,
+		"goal_title": "Ersten eigenen Rahmen bauen",
+		"goal_rep": 1500.0, "goal_money": 250000.0, "goal_knowhow": 150.0,
+	},
 	{"name": "Radmarke", "playable": false, "goal_title": "Marktanteil Heimatland", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "National", "playable": false, "goal_title": "Marktanteil Inland", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "Europa", "playable": false, "goal_title": "Präsenz in Europa", "goal_rep": 0.0, "goal_money": 0.0},
@@ -139,6 +207,13 @@ const PHASES := [
 
 static var _templates_by_id := {}
 static var _templates_by_kind := {}
+
+
+static func bike(id: String) -> Dictionary:
+	for b in BIKES:
+		if b["id"] == id:
+			return b
+	return {}
 
 
 static func order_template(id: String) -> Dictionary:

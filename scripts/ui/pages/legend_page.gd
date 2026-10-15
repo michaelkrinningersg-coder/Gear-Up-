@@ -9,6 +9,7 @@ var _prestige_button: Button
 var _run_money: Label
 var _run_time: Label
 var _run_orders: Label
+var _run_sales: Label
 var _total_prestiges: Label
 var _total_money: Label
 var _total_orders: Label
@@ -50,6 +51,7 @@ func _build() -> void:
 	rv.add_child(UI.label("Dieser Run", "SubtitleLabel"))
 	_run_money = UI.stat_row(rv, "Gesamtgeld")
 	_run_orders = UI.stat_row(rv, "Aufträge")
+	_run_sales = UI.stat_row(rv, "Räder verkauft")
 	_run_time = UI.stat_row(rv, "Spielzeit")
 	content.add_child(run)
 
@@ -75,6 +77,7 @@ func refresh() -> void:
 	_prestige_button.disabled = not model.can_prestige()
 	_run_money.text = NumberFormat.money(model.run_money)
 	_run_orders.text = NumberFormat.num(model.run_orders, 0)
+	_run_sales.text = NumberFormat.num(model.run_sales, 0)
 	_run_time.text = NumberFormat.duration(model.run_time)
 	_total_prestiges.text = str(model.prestige_count)
 	_total_money.text = NumberFormat.money(model.lifetime_money)

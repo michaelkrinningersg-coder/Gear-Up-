@@ -15,3 +15,10 @@ func test_phase_one_pacing() -> void:
 	for m in minutes:
 		check(m >= MIN_MINUTES and m <= MAX_MINUTES,
 			"Phase 1 in %s min (Korridor %s–%s min)" % [snappedf(m, 0.1), MIN_MINUTES, MAX_MINUTES])
+
+
+func test_phase_two_pacing() -> void:
+	# Bis zum Ziel von Phase 2 (Ende Radladen) inklusive Phase 1
+	var bot := SimBot.new(GameModel.new(1), 4.0)
+	var minutes := bot.run_until_phase_goal(2, 3.0 * 3600.0, 0.2) / 60.0
+	check(minutes >= 25.0 and minutes <= 75.0, "Phase-2-Ziel nach %s min (Korridor 25–75 min)" % snappedf(minutes, 0.1))

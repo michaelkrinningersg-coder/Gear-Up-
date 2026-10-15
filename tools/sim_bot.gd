@@ -30,12 +30,30 @@ func run_until_goal(max_seconds: float, dt := 0.1) -> float:
 	return -1.0
 
 
+## Spielt bis zum Ziel der angegebenen Phase und steigt unterwegs auf; liefert Sekunden oder -1.
+func run_until_phase_goal(target_phase: int, max_seconds: float, dt := 0.1) -> float:
+	while _time < max_seconds:
+		step(dt)
+		_mark_subgoals()
+		if not model.phase_goal_met():
+			continue
+		if model.phase >= target_phase:
+			_mark("Ziel Phase %d" % model.phase)
+			return _time
+		if model.advance_phase():
+			_mark("Phase %d" % model.phase)
+	return -1.0
+
+
 func step(dt: float) -> void:
 	_time += dt
 	model.tick(dt)
 	_tap_budget += taps_per_second * dt
 	while _tap_budget >= 1.0:
 		_tap_budget -= 1.0
+		if model.shop_open() and model.serviceable_customer() >= 0:
+			model.sell()
+			continue
 		if model.active_order.is_empty():
 			model.accept_order(_best_order())
 		model.tap()
@@ -46,7 +64,10 @@ func _best_order() -> int:
 	var def := model.phase_def()
 	var rep_progress := model.reputation.to_float() / float(def["goal_rep"])
 	var money_progress := model.money.to_float() / float(def["goal_money"])
+	var knowhow_goal := float(def.get("goal_knowhow", 0.0))
+	var knowhow_progress := model.knowhow.to_float() / knowhow_goal if knowhow_goal > 0.0 else INF
 	var want_rep := rep_progress < money_progress
+	var want_knowhow := knowhow_progress < minf(rep_progress, money_progress)
 	var best := 0
 	var best_score := -1.0
 	for i in model.board.size():
@@ -58,6 +79,8 @@ func _best_order() -> int:
 			score = reward["rep"].to_float() / work
 		else:
 			score = reward["money"].to_float() / work
+		if want_knowhow:
+			score = reward["knowhow"].to_float() / work
 		score += reward["knowhow"].to_float() * 0.05
 		if score > best_score:
 			best_score = score
@@ -83,9 +106,22 @@ func _shop() -> void:
 			if model.upgrade_level(cheapest) == 1:
 				_mark(Balance.UPGRADES[cheapest]["name"])
 			bought = true
-		for id in Balance.KNOWHOW_NODES:
-			if model.buy_knowhow(id):
-				bought = true
+		# Know-how nur ausgeben, solange das Phasenziel keins verlangt
+		if float(model.phase_def().get("goal_knowhow", 0.0)) <= 0.0:
+			for id in Balance.KNOWHOW_NODES:
+				if model.buy_knowhow(id):
+					bought = true
+
+
+func _mark_subgoals() -> void:
+	var def := model.phase_def()
+	var p := model.phase
+	if model.reputation.gte(BigNumber.of(def["goal_rep"])):
+		_mark("P%d Ruf" % p)
+	if model.money.gte(BigNumber.of(def["goal_money"])):
+		_mark("P%d Geld" % p)
+	if model.knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0))):
+		_mark("P%d Know-how" % p)
 
 
 func _on_tier_changed(tier: int) -> void:

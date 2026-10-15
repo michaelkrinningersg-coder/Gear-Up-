@@ -3,6 +3,7 @@ extends Control
 
 const PAGES := [
 	["Werkstatt", "nav_workshop"],
+	["Laden", "nav_shop"],
 	["Ausbau", "nav_upgrades"],
 	["Know-how", "nav_knowhow"],
 	["Legende", "nav_legend"],
@@ -13,6 +14,7 @@ var _header: HeaderBar
 var _pages: Array[Page] = []
 var _nav: Array[Button] = []
 var _current := 0
+var _last_phase := 1
 ## Ebene über allem für schwebende Texte, Toasts und Dialoge.
 var _fx: Control
 
@@ -51,7 +53,7 @@ func _ready() -> void:
 	add_child(_fx)
 
 	var model := Game.model
-	_pages = [WorkshopPage.new(), UpgradesPage.new(), KnowhowPage.new(), LegendPage.new(), OptionsPage.new()]
+	_pages = [WorkshopPage.new(), ShopPage.new(), UpgradesPage.new(), KnowhowPage.new(), LegendPage.new(), OptionsPage.new()]
 	for page in _pages:
 		page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		stack.add_child(page)
@@ -59,12 +61,17 @@ func _ready() -> void:
 	_show_page(0)
 
 	model.customer_tier_changed.connect(_on_tier_changed)
+	_last_phase = model.phase
+	model.phase_changed.connect(_on_phase_changed)
 	Game.offline_progress.connect(_show_offline_report)
 	if not Game.offline_report.is_empty():
 		_show_offline_report.call_deferred(Game.offline_report)
 
 
 func _process(_delta: float) -> void:
+	_nav[1].visible = Game.model.shop_open()
+	if _current == 1 and not Game.model.shop_open():
+		_show_page(0)
 	_header.refresh(Game.model)
 	_pages[_current].refresh()
 
@@ -101,15 +108,29 @@ func _show_page(index: int) -> void:
 	_pages[index].refresh()
 
 
+func _on_phase_changed() -> void:
+	var phase := Game.model.phase
+	if phase > _last_phase:
+		UI.toast(_fx, "Phase %d: %s – geschafft!" % [phase, Balance.phase_def(phase)["name"]], UiTheme.MONEY)
+		if phase == 2:
+			_show_page(1)
+	_last_phase = phase
+
+
 func _on_tier_changed(tier: int) -> void:
 	UI.toast(_fx, "Neue Kundschaft: %s – größere Aufträge, mehr Lohn!" % Balance.CUSTOMER_TIERS[tier]["name"], UiTheme.REPUTATION)
 
 
 func _show_offline_report(report: Dictionary) -> void:
 	Game.offline_report = {}
-	var body := "Du warst %s weg. Dein Lehrling hat in der Zeit mit halber Kraft %s Aufträge erledigt:\n\n+%s   ·   +%s Ruf" % [
+	var work := PackedStringArray()
+	if int(report["orders"]) > 0:
+		work.append("dein Lehrling %s Aufträge erledigt" % NumberFormat.num(report["orders"], 0))
+	if int(report.get("sales", 0)) > 0:
+		work.append("dein Verkäufer %s Räder verkauft" % NumberFormat.num(report["sales"], 0))
+	var body := "Du warst %s weg. In der Zeit hat mit halber Kraft %s:\n\n+%s   ·   +%s Ruf" % [
 		NumberFormat.duration(report["seconds"]),
-		NumberFormat.num(report["orders"], 0),
+		" und ".join(work),
 		NumberFormat.money(report["money"]),
 		NumberFormat.big(report["rep"]),
 	]

@@ -35,17 +35,24 @@ func _capture(path: String) -> void:
 
 func _prepare_state(m: GameModel) -> void:
 	m.wipe()
-	m.money = BigNumber.of(4321.0)
-	m.reputation = BigNumber.of(64.0)
-	m.knowhow = BigNumber.of(3.0)
-	m.run_money = BigNumber.of(9800.0)
-	m.run_time = 7.0 * 60.0
-	m.run_orders = 58
-	m.upgrades = {"toolbox": 6, "apprentice": 2, "parts_shelf": 2, "repair_stand": 1}
-	m.knowhow_levels = {"routine": 1}
+	m.phase = 2
+	m.money = BigNumber.of(38420.0)
+	m.reputation = BigNumber.of(520.0)
+	m.knowhow = BigNumber.of(42.0)
+	m.run_money = BigNumber.of(160000.0)
+	m.run_time = 31.0 * 60.0
+	m.run_orders = 412
+	m.run_sales = 37
+	m.upgrades = {"toolbox": 14, "apprentice": 9, "parts_shelf": 8, "repair_stand": 5,
+		"salesperson": 2, "storage": 2, "sales_floor": 1}
+	m.knowhow_levels = {"routine": 4, "keen_eye": 2}
 	m.board.clear()
 	m._fill_board()
+	m._restock()
+	m.shop_queue.append({"bike": "trekking", "wait": 18.0})
+	m.shop_queue.append({"bike": "city", "wait": 9.0})
+	m.stock["trekking"] = 0
+	m.shop_queue.append({"bike": "trekking", "wait": 22.0})
 	m.accept_order(0)
 	for i in 3:
 		m.tap()
-	m.tick(1.2)
