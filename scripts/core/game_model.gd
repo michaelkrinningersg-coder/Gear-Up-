@@ -43,6 +43,10 @@ var brand: Dictionary = {}
 ## Laufende Entwicklung: {"sparte": id, "work": float} oder leer.
 var dev_project: Dictionary = {}
 var run_bikes_built := 0.0
+# National (Phase 4)
+var regions_open: Dictionary = {}
+## Laufende Kampagnen: [{"region": id, "time_left": Sekunden}]
+var campaigns: Array[Dictionary] = []
 
 # --- Dauerhaft -----------------------------------------------------------------
 
@@ -91,6 +95,8 @@ func reset_run() -> void:
 	brand = {}
 	dev_project = {}
 	run_bikes_built = 0.0
+	regions_open = {}
+	campaigns.clear()
 	_last_tier = customer_tier()
 	board.clear()
 	_fill_board()
@@ -567,10 +573,11 @@ func brand_unit_cost(sparte_id: String) -> float:
 
 
 ## Anteil, den das Modell bei voller Reichweite gegen die Konkurrenz holen würde.
-func brand_appeal_share(sparte_id: String) -> float:
+func brand_appeal_share(sparte_id: String, region_id := "home") -> float:
 	if generation(sparte_id) <= 0:
 		return 0.0
 	var appeal := brand_quality(sparte_id) * float(Balance.PRICE_CLASSES[price_class(sparte_id)]["appeal"])
+	appeal *= campaign_mult(region_id)
 	return appeal / (appeal + float(Balance.sparte(sparte_id)["competitor"]))
 
 
@@ -582,38 +589,67 @@ func production_capacity() -> float:
 	var base := Balance.BRAND_BASE_PRODUCTION + _upgrade_value("factory") * upgrade_level("factory")
 	var automation := 1.0 + _knowhow_value("automation") * knowhow_level("automation")
 	var plants := 1.0 + _knowhow_value("second_plant") * knowhow_level("second_plant")
-	return base * automation * plants
+	var mass := 1.0 + _upgrade_value("mass_production") * upgrade_level("mass_production")
+	return base * automation * plants * mass
 
 
-## Verkäufe je Sparte (Räder/s): Nachfrage, gedeckelt durch die Produktion,
-## die anteilig zur Nachfrage verteilt wird.
+## Verkäufe je Sparte und Region (Räder/s): Nachfrage in allen erschlossenen
+## Regionen, gedeckelt durch die Produktion, die anteilig zur Nachfrage verteilt wird.
 func brand_rates() -> Dictionary:
 	var demand := {}
 	var total_demand := 0.0
-	for s in Balance.SPARTEN:
-		var d := float(s["market"]) * brand_appeal_share(s["id"]) * brand_reach()
-		demand[s["id"]] = d
-		total_demand += d
+	var reach := brand_reach() * (1.0 + _upgrade_value("distribution_center") * upgrade_level("distribution_center"))
+	for r in markets_in_scope():
+		if not region_open(r["id"]):
+			continue
+		for s in Balance.SPARTEN:
+			var d := regional_market(r["id"], s["id"]) * brand_appeal_share(s["id"], r["id"]) * reach
+			demand[[r["id"], s["id"]]] = d
+			total_demand += d
 	var fill := 1.0 if total_demand <= 0.0 else minf(1.0, production_capacity() / total_demand)
 	var units := {}
+	var regions := {}
 	var total_units := 0.0
 	var profit := 0.0
 	for s in Balance.SPARTEN:
-		var sold: float = demand[s["id"]] * fill
-		units[s["id"]] = sold
+		units[s["id"]] = 0.0
+	for key in demand:
+		var sold: float = demand[key] * fill
+		units[key[1]] += sold
+		regions[key[0]] = float(regions.get(key[0], 0.0)) + sold
 		total_units += sold
-		if sold > 0.0:
-			profit += sold * (brand_price(s["id"]) - brand_unit_cost(s["id"]))
+	for s in Balance.SPARTEN:
+		if units[s["id"]] > 0.0:
+			profit += units[s["id"]] * (brand_price(s["id"]) - brand_unit_cost(s["id"]))
 	return {
-		"units": units, "total_units": total_units, "demand": total_demand,
+		"units": units, "regions": regions, "total_units": total_units, "demand": total_demand,
 		"profit": profit * legend_mult(), "rep": total_units * Balance.BRAND_REP_PER_BIKE * reputation_mult(),
 	}
 
 
-func market_size() -> float:
+## Phase 3 kennt nur die Heimatregion; ab Phase 4 zählt das ganze Land.
+func markets_in_scope() -> Array:
+	if phase >= 4:
+		return Balance.REGIONS
+	return [Balance.REGIONS[0]]
+
+
+func regional_market(region_id: String, sparte_id: String) -> float:
+	var r := Balance.region(region_id)
+	return float(Balance.sparte(sparte_id)["market"]) * float(r["size"]) * float(r["prefs"].get(sparte_id, 1.0))
+
+
+func region_market_size(region_id: String) -> float:
 	var total := 0.0
 	for s in Balance.SPARTEN:
-		total += float(s["market"])
+		total += regional_market(region_id, s["id"])
+	return total
+
+
+func market_size() -> float:
+	var total := 0.0
+	for r in markets_in_scope():
+		total += region_market_size(r["id"])
 	return total
 
 
@@ -623,8 +659,76 @@ func market_share() -> float:
 	return brand_rates()["total_units"] / market_size()
 
 
+# --- National (Phase 4) ---------------------------------------------------------
+
+func national_open() -> bool:
+	return phase >= 4
+
+
+func region_open(region_id: String) -> bool:
+	return region_id == "home" or regions_open.has(region_id)
+
+
+func region_cost(region_id: String) -> BigNumber:
+	return BigNumber.of(Balance.region(region_id)["open_cost"])
+
+
+func can_open_region(region_id: String) -> bool:
+	return national_open() and not region_open(region_id) and money.gte(region_cost(region_id))
+
+
+func open_region(region_id: String) -> bool:
+	if not can_open_region(region_id):
+		return false
+	money = money.sub(region_cost(region_id))
+	regions_open[region_id] = true
+	return true
+
+
+func campaign_cost(region_id: String) -> BigNumber:
+	return BigNumber.of(Balance.CAMPAIGN_BASE_COST * float(Balance.region(region_id)["size"]))
+
+
+func campaign_duration() -> float:
+	return Balance.CAMPAIGN_DURATION * (1.0 + _upgrade_value("marketing_dept") * upgrade_level("marketing_dept"))
+
+
+func campaign_time_left(region_id: String) -> float:
+	for c in campaigns:
+		if c["region"] == region_id:
+			return float(c["time_left"])
+	return 0.0
+
+
+func campaign_mult(region_id: String) -> float:
+	if campaign_time_left(region_id) <= 0.0:
+		return 1.0
+	return 1.0 + Balance.CAMPAIGN_EFFECT * (1.0 + _upgrade_value("marketing_dept") * upgrade_level("marketing_dept"))
+
+
+func can_start_campaign(region_id: String) -> bool:
+	return national_open() and region_open(region_id) and campaign_time_left(region_id) <= 0.0 \
+		and campaigns.size() < Balance.CAMPAIGN_SLOTS and money.gte(campaign_cost(region_id))
+
+
+func start_campaign(region_id: String) -> bool:
+	if not can_start_campaign(region_id):
+		return false
+	money = money.sub(campaign_cost(region_id))
+	campaigns.append({"region": region_id, "time_left": campaign_duration()})
+	return true
+
+
+func _tick_campaigns(delta: float) -> void:
+	for i in range(campaigns.size() - 1, -1, -1):
+		campaigns[i]["time_left"] = float(campaigns[i]["time_left"]) - delta
+		if campaigns[i]["time_left"] <= 0.0:
+			campaigns.remove_at(i)
+
+
 func _tick_brand(delta: float) -> void:
 	_add_design_work(design_rate() * delta)
+	_tick_campaigns(delta)
 	var rates := brand_rates()
 	if rates["total_units"] <= 0.0:
 		return
@@ -639,6 +743,8 @@ func _tick_brand(delta: float) -> void:
 func _offline_brand(seconds: float, report: Dictionary) -> void:
 	if not brand_open():
 		return
+	# Kampagnen laufen offline weiter ab
+	_tick_campaigns(seconds)
 	var rates := brand_rates()
 	if rates["total_units"] <= 0.0:
 		return
@@ -845,6 +951,8 @@ func to_dict() -> Dictionary:
 		"brand": brand.duplicate(true),
 		"dev_project": dev_project.duplicate(),
 		"run_bikes_built": run_bikes_built,
+		"regions_open": regions_open.duplicate(),
+		"campaigns": campaigns.duplicate(true),
 		"legend": legend.to_save(),
 		"prestige_count": prestige_count,
 		"lifetime_money": lifetime_money.to_save(),
@@ -913,6 +1021,18 @@ func from_dict(d: Dictionary) -> void:
 	if saved_dev is Dictionary and not Balance.sparte(str(saved_dev.get("sparte", ""))).is_empty():
 		dev_project = {"sparte": str(saved_dev["sparte"]), "work": maxf(0.0, float(saved_dev.get("work", 0.0)))}
 	run_bikes_built = float(d.get("run_bikes_built", 0.0))
+	regions_open = {}
+	var saved_regions: Variant = d.get("regions_open")
+	if saved_regions is Dictionary:
+		for id in saved_regions:
+			if not Balance.region(str(id)).is_empty():
+				regions_open[str(id)] = true
+	campaigns.clear()
+	var saved_campaigns: Variant = d.get("campaigns")
+	if saved_campaigns is Array:
+		for c in saved_campaigns:
+			if c is Dictionary and not Balance.region(str(c.get("region", ""))).is_empty() and campaigns.size() < Balance.CAMPAIGN_SLOTS:
+				campaigns.append({"region": str(c["region"]), "time_left": maxf(0.0, float(c.get("time_left", 0.0)))})
 	legend = BigNumber.from_save(d.get("legend"))
 	prestige_count = int(d.get("prestige_count", 0))
 	lifetime_money = BigNumber.from_save(d.get("lifetime_money"))

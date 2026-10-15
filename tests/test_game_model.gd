@@ -396,3 +396,58 @@ func test_brand_goal_offline_and_save() -> void:
 	check_eq(copy.price_class("city"), 0, "Preisklasse gespeichert")
 	check_eq(copy.dev_project.get("sparte"), "trekking", "Projekt gespeichert")
 	check_near(float(copy.dev_project["work"]), float(m.dev_project["work"]), 1e-9, "Fortschritt gespeichert")
+
+
+func _national_model() -> GameModel:
+	var m := _brand_model()
+	m.phase = 4
+	m.money = BigNumber.of(1e8)
+	m.brand["city"] = {"gen": 2, "class": 1}
+	m.brand["mtb"] = {"gen": 2, "class": 1}
+	m.upgrades["factory"] = 500  # Produktion soll hier kein Engpass sein
+	return m
+
+
+func test_regions() -> void:
+	var m := _national_model()
+	check(m.region_open("home"), "Heimatregion immer offen")
+	check(not m.region_open("south"), "Andere Regionen zu")
+	var share_before := m.market_share()
+	var units_before: float = m.brand_rates()["total_units"]
+	check(m.open_region("south"), "Region erschlossen")
+	check_near(m.money.to_float(), 1e8 - float(Balance.region("south")["open_cost"]), 1e-9, "Kosten bezahlt")
+	check(m.brand_rates()["total_units"] > units_before, "Mehr Absatz mit neuer Region")
+	check(m.market_share() > share_before, "Mehr Marktanteil")
+	check(m.regional_market("south", "mtb") > m.regional_market("home", "mtb"), "Bayern mag Mountainbikes")
+	var phase3 := _brand_model()
+	check(phase3.market_size() < m.market_size(), "Phase 4 misst am ganzen Land")
+
+
+func test_campaigns() -> void:
+	var m := _national_model()
+	var before: float = m.brand_rates()["total_units"]
+	check(m.start_campaign("home"), "Kampagne gestartet")
+	check(not m.start_campaign("home"), "Nicht doppelt in einer Region")
+	check(not m.start_campaign("north"), "Nur in erschlossenen Regionen")
+	check(m.brand_rates()["total_units"] > before, "Kampagne steigert Absatz")
+	m.open_region("north")
+	check(m.start_campaign("north"), "Zweite Kampagne")
+	m.open_region("west")
+	check(not m.start_campaign("west"), "Höchstens %d gleichzeitig" % Balance.CAMPAIGN_SLOTS)
+	m.tick(m.campaign_duration() + 1.0)
+	check(m.campaigns.is_empty(), "Kampagnen laufen ab")
+	check(m.campaign_mult("home") == 1.0, "Wirkung vorbei")
+
+
+func test_national_save_and_goal() -> void:
+	var m := _national_model()
+	m.open_region("north")
+	m.start_campaign("north")
+	var copy := GameModel.new(6)
+	copy.from_dict(JSON.parse_string(JSON.stringify(m.to_dict(), "", false, true)))
+	check(copy.region_open("north"), "Region gespeichert")
+	check_near(copy.campaign_time_left("north"), m.campaign_time_left("north"), 1e-9, "Kampagne gespeichert")
+	var def := m.phase_def()
+	check(float(def.get("goal_share", 0.0)) > 0.0, "Phase 4 verlangt Marktanteil")
+	m.wipe()
+	check(m.regions_open.is_empty() and m.campaigns.is_empty(), "Neuer Run ohne Regionen")

@@ -11,6 +11,9 @@ var _dev_info: Label
 var _design_button: Button
 var _bump_tween: Tween
 var _rows := {}
+var _share_title: Label
+var _region_section: VBoxContainer
+var _region_rows := {}
 
 
 func _build() -> void:
@@ -19,7 +22,8 @@ func _build() -> void:
 	var ov := UI.vbox(10)
 	overview.add_child(ov)
 	var share_row := UI.hbox(10)
-	share_row.add_child(UI.label("Marktanteil Heimatland", "SubtitleLabel"))
+	_share_title = UI.label("Marktanteil Heimatland", "SubtitleLabel")
+	share_row.add_child(_share_title)
 	ov.add_child(share_row)
 	_share_bar = UI.progress(UiTheme.ACCENT, 16)
 	ov.add_child(_share_bar)
@@ -43,6 +47,13 @@ func _build() -> void:
 	_design_button.resized.connect(func() -> void: _design_button.pivot_offset = _design_button.size / 2.0)
 	dv.add_child(_design_button)
 	content.add_child(_dev_card)
+
+	_region_section = UI.vbox(14)
+	_region_section.add_child(UI.label("Regionen", "TitleLabel"))
+	_region_section.add_child(UI.label("Jede Region mag andere Sparten. Kampagnen machen deine Räder dort für eine Weile attraktiver (höchstens %d gleichzeitig)." % Balance.CAMPAIGN_SLOTS, "MutedLabel", true))
+	for r in Balance.REGIONS:
+		_region_section.add_child(_build_region_row(r))
+	content.add_child(_region_section)
 
 	content.add_child(UI.label("Sparten", "TitleLabel"))
 	for s in Balance.SPARTEN:
@@ -83,8 +94,73 @@ func _build_row(s: Dictionary) -> PanelContainer:
 	return card
 
 
+func _build_region_row(r: Dictionary) -> PanelContainer:
+	var card := UI.card()
+	var row := UI.hbox(12)
+	card.add_child(row)
+	var info := UI.vbox(2)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_child(UI.label(r["name"], "SubtitleLabel"))
+	var likes := PackedStringArray()
+	for sid in r["prefs"]:
+		if float(r["prefs"][sid]) > 1.0:
+			likes.append(Balance.sparte(sid)["name"])
+	info.add_child(UI.label("Mag: " + (", ".join(likes) if not likes.is_empty() else "alles gleich"), "MutedLabel", true))
+	var status := UI.label("", "SmallLabel")
+	info.add_child(status)
+	var campaign_bar := UI.progress(UiTheme.LEGEND, 8)
+	info.add_child(campaign_bar)
+	row.add_child(info)
+	var action := UI.button("", _on_region_action.bind(r["id"]))
+	action.icon = UI.icon_texture("money")
+	action.custom_minimum_size = Vector2(230, 96)
+	action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(action)
+	_region_rows[r["id"]] = {"status": status, "action": action, "bar": campaign_bar}
+	return card
+
+
+func _refresh_regions(rates: Dictionary) -> void:
+	_region_section.visible = model.national_open()
+	if not model.national_open():
+		return
+	for r in Balance.REGIONS:
+		var rid: String = r["id"]
+		var row: Dictionary = _region_rows[rid]
+		var action: Button = row["action"]
+		var size := model.region_market_size(rid)
+		var time_left := model.campaign_time_left(rid)
+		row["bar"].visible = time_left > 0.0
+		row["bar"].value = time_left / model.campaign_duration()
+		if not model.region_open(rid):
+			row["status"].text = "Markt %s Räder/s · nicht erschlossen" % NumberFormat.num(size, 0)
+			action.text = "Erschließen\n" + NumberFormat.money(model.region_cost(rid))
+			action.disabled = not model.can_open_region(rid)
+			continue
+		var sold := float(rates["regions"].get(rid, 0.0))
+		row["status"].text = "Anteil %s · %s Räder/s" % [NumberFormat.percent(sold / size), NumberFormat.num(sold)]
+		if time_left > 0.0:
+			action.text = "Kampagne\n%s" % NumberFormat.duration(time_left)
+			action.icon = null
+			action.disabled = true
+		else:
+			action.text = "Kampagne\n" + NumberFormat.money(model.campaign_cost(rid))
+			action.icon = UI.icon_texture("money")
+			action.disabled = not model.can_start_campaign(rid)
+
+
+func _on_region_action(region_id: String) -> void:
+	if not model.region_open(region_id):
+		if model.open_region(region_id):
+			UI.toast(fx, "%s erschlossen!" % Balance.region(region_id)["name"], UiTheme.MONEY)
+	elif model.start_campaign(region_id):
+		UI.toast(fx, "Kampagne in %s gestartet" % Balance.region(region_id)["name"], UiTheme.LEGEND)
+
+
 func refresh() -> void:
 	var rates := model.brand_rates()
+	_share_title.text = "Marktanteil Inland" if model.national_open() else "Marktanteil Heimatland"
+	_refresh_regions(rates)
 	var goal := float(model.phase_def().get("goal_share", 0.0))
 	var share := model.market_share()
 	_share_bar.value = clampf(share / goal, 0.0, 1.0) if goal > 0.0 else share

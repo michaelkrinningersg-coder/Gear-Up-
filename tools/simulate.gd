@@ -14,12 +14,12 @@ func _initialize() -> void:
 		for seed_value in SEEDS:
 			var model := GameModel.new(seed_value)
 			var bot := SimBot.new(model, tps)
-			var seconds := bot.run_until_phase_goal(3, MAX_SECONDS, 0.2)
+			var seconds := bot.run_until_phase_goal(4, MAX_SECONDS, 0.2)
 			times.append(seconds)
 			var parts := PackedStringArray()
 			for key in bot.milestones:
 				parts.append("%s %s" % [key, _minutes(bot.milestones[key])])
-			print("Seed %d: Ziel Phase 3 %s | Gesamtgeld %s | Legende %s | Stufen %s" % [
+			print("Seed %d: Ziel Phase 4 %s | Gesamtgeld %s | Legende %s | Stufen %s" % [
 				seed_value, _minutes(seconds), NumberFormat.money(model.run_money),
 				NumberFormat.big(model.pending_legend()), str(model.upgrades)])
 			print("    " + ", ".join(parts))

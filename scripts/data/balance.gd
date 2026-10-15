@@ -153,7 +153,44 @@ const UPGRADES := {
 		"value": 0.1, "base_cost": 80000.0, "growth": 1.75,
 		"effect": "+%s %% Qualität", "effect_scale": 100.0,
 	},
+	# --- Phase 4: National ---
+	"distribution_center": {
+		"name": "Vertriebszentrum", "phase": 4,
+		"desc": "Schnellere Lieferung an alle Händler: mehr Nachfrage in jeder Region.",
+		"value": 0.15, "base_cost": 1500000.0, "growth": 1.7,
+		"effect": "+%s %% Nachfrage", "effect_scale": 100.0,
+	},
+	"marketing_dept": {
+		"name": "Marketingabteilung", "phase": 4, "max_level": 10,
+		"desc": "Profis für Kampagnen: stärkere und längere Kampagnen.",
+		"value": 0.2, "base_cost": 1000000.0, "growth": 1.8,
+		"effect": "+%s %% Kampagnenwirkung und -dauer", "effect_scale": 100.0,
+	},
+	"mass_production": {
+		"name": "Großserienfertigung", "phase": 4,
+		"desc": "Fließband im großen Stil: deutlich mehr Produktion.",
+		"value": 0.4, "base_cost": 2000000.0, "growth": 1.75,
+		"effect": "+%s %% Produktion", "effect_scale": 100.0,
+	},
 }
+
+# --- National (Phase 4) -----------------------------------------------------
+
+## Regionen des Heimatlands. size skaliert die Märkte der Sparten,
+## prefs sind Spartenvorlieben (fehlend = 1). Die Heimatregion ist der Markt aus Phase 3.
+const REGIONS := [
+	{"id": "home", "name": "Heimatregion", "size": 1.0, "prefs": {}, "open_cost": 0.0},
+	{"id": "north", "name": "Norden", "size": 0.8, "prefs": {"trekking": 1.6, "city": 1.3, "mtb": 0.5}, "open_cost": 1000000.0},
+	{"id": "west", "name": "Rhein & Ruhr", "size": 1.2, "prefs": {"city": 1.4, "ebike": 1.4, "road": 0.8}, "open_cost": 2500000.0},
+	{"id": "south", "name": "Bayern & Alpen", "size": 1.0, "prefs": {"mtb": 1.9, "road": 1.3, "city": 0.7}, "open_cost": 4000000.0},
+	{"id": "east", "name": "Osten & Berlin", "size": 0.9, "prefs": {"city": 1.5, "road": 1.4, "mtb": 0.6}, "open_cost": 6000000.0},
+	{"id": "southwest", "name": "Südwesten", "size": 0.7, "prefs": {"ebike": 1.7, "mtb": 1.4, "city": 0.6}, "open_cost": 8000000.0},
+]
+## Kampagne: Kosten = Grundkosten · Regionsgröße; erhöht die Attraktivität in der Region.
+const CAMPAIGN_BASE_COST := 400000.0
+const CAMPAIGN_DURATION := 120.0
+const CAMPAIGN_EFFECT := 0.6
+const CAMPAIGN_SLOTS := 2
 
 # --- Radmarke (Phase 3) -----------------------------------------------------
 
@@ -300,7 +337,11 @@ const PHASES := [
 		"goal_title": "Marktführer im Heimatland werden",
 		"goal_rep": 0.0, "goal_money": 3000000.0, "goal_share": 0.25,
 	},
-	{"name": "National", "playable": false, "goal_title": "Marktanteil Inland", "goal_rep": 0.0, "goal_money": 0.0},
+	{
+		"name": "National", "playable": true,
+		"goal_title": "Nummer 1 im ganzen Land",
+		"goal_rep": 0.0, "goal_money": 20000000.0, "goal_share": 0.2,
+	},
 	{"name": "Europa", "playable": false, "goal_title": "Präsenz in Europa", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "International", "playable": false, "goal_title": "Continental-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "Continental-Team", "playable": false, "goal_title": "ProTeam-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
@@ -314,6 +355,13 @@ const PHASES := [
 
 static var _templates_by_id := {}
 static var _templates_by_kind := {}
+
+
+static func region(id: String) -> Dictionary:
+	for r in REGIONS:
+		if r["id"] == id:
+			return r
+	return {}
 
 
 static func sparte(id: String) -> Dictionary:

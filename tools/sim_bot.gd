@@ -124,6 +124,8 @@ func _manage_brand() -> void:
 	var want_share := share_goal > 0.0 and model.market_share() / share_goal < model.money.to_float() / float(def["goal_money"])
 	for s in Balance.SPARTEN:
 		model.set_price_class(s["id"], 0 if want_share else Balance.DEFAULT_PRICE_CLASS)
+	if model.national_open():
+		_manage_regions()
 	if not model.dev_project.is_empty():
 		return
 	var best := ""
@@ -134,6 +136,22 @@ func _manage_brand() -> void:
 	if best != "":
 		model.start_dev(best)
 		_mark("Modell %s %d" % [best, model.generation(best) + 1])
+
+
+func _manage_regions() -> void:
+	var cheapest := ""
+	for r in Balance.REGIONS:
+		if not model.region_open(r["id"]) and (cheapest == "" or model.region_cost(r["id"]).lt(model.region_cost(cheapest))):
+			cheapest = r["id"]
+	if cheapest != "" and model.region_cost(cheapest).lte(model.money.mul_f(spend_fraction)):
+		model.open_region(cheapest)
+		_mark("Region %s" % cheapest)
+	var biggest := ""
+	for r in Balance.REGIONS:
+		if model.can_start_campaign(r["id"]) and (biggest == "" or float(r["size"]) > float(Balance.region(biggest)["size"])):
+			biggest = r["id"]
+	if biggest != "" and model.campaign_cost(biggest).lte(model.money.mul_f(0.3)):
+		model.start_campaign(biggest)
 
 
 func _mark_subgoals() -> void:
