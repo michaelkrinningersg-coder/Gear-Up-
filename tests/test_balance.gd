@@ -22,3 +22,10 @@ func test_phase_two_pacing() -> void:
 	var bot := SimBot.new(GameModel.new(1), 4.0)
 	var minutes := bot.run_until_phase_goal(2, 3.0 * 3600.0, 0.2) / 60.0
 	check(minutes >= 25.0 and minutes <= 75.0, "Phase-2-Ziel nach %s min (Korridor 25–75 min)" % snappedf(minutes, 0.1))
+
+
+func test_phase_three_pacing() -> void:
+	# Erster Run bis zum Ziel von Phase 3 – laut GDD erster sinnvoller Prestige
+	var bot := SimBot.new(GameModel.new(1), 4.0)
+	var minutes := bot.run_until_phase_goal(3, 4.0 * 3600.0, 0.2) / 60.0
+	check(minutes >= 45.0 and minutes <= 110.0, "Phase-3-Ziel nach %s min (Korridor 45–110 min)" % snappedf(minutes, 0.1))

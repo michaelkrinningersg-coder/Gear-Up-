@@ -4,7 +4,7 @@ Incremental-Spiel mit leichtem Aufbau-Anteil: vom Hinterhof-Schrauber über Radl
 
 Das Game Design Document liegt als Claude-Doc: *Gear Up! – GDD v0.1*.
 
-## Stand: Phase 1 „Schrauber“ und Phase 2 „Radladen“ spielbar
+## Stand: Phasen 1–3 spielbar (Schrauber, Radladen, Radmarke)
 
 - **Werkstatt:** Auftragsliste mit drei Angeboten (schnell = mehr Ruf, lukrativ = mehr Geld, knifflig = Know-how), Aufträge per Tipp abarbeiten.
 - **Kundschaft:** Mehr Ruf bringt bessere Kundschaft – größere Aufträge, mehr Lohn (Laufkundschaft → Nachbarschaft → Pendler → Rennradler).
@@ -15,7 +15,11 @@ Das Game Design Document liegt als Claude-Doc: *Gear Up! – GDD v0.1*.
 - **Phasenziel 1:** „Radladen eröffnen“ (300 Ruf, 50.000 € Miete).
 - **Radladen (Phase 2):** Kundschaft kommt in den Laden und wünscht sich ein Rad; „Verkaufen!“ bedient sie, der Verkäufer automatisch (offline mit halber Kraft). Sortiment aus fünf Rädern (Citybike bis E-Bike, per Ruf freigeschaltet) mit automatischer Nachbestellung; ungeduldige Kundschaft geht wieder.
 - **Ausbau Phase 2:** Verkäufer, Lager, Verkaufsfläche, Probefahrtstrecke, Bikefitting, Werkstattplätze, Zweite Filiale.
-- **Phasenziel 2:** „Ersten eigenen Rahmen bauen“ (1.500 Ruf, 250.000 €, 150 Know-how); Phase 3 folgt.
+- **Phasenziel 2:** „Ersten eigenen Rahmen bauen“ (1.500 Ruf, 250.000 €, 150 Know-how).
+- **Radmarke (Phase 3):** eigene Modelle in fünf Sparten, Generationen nach Rahmenmaterial (Stahl → Alu → Carbon → Titan), entwickelt per „Konstruieren!“ oder Konstruktionsbüro. Baukasten mit Preisklasse (Einsteiger/Mittelklasse/Premium: Preis gegen Marktanteil). Absatz = Nachfrage gegen fiktive Konkurrenz × Reichweite des Händlernetzes, gedeckelt durch die Fertigung.
+- **Ausbau Phase 3:** Konstruktionsbüro, Fertigung, Händlernetz, Testlabor. **Know-how-Äste** Technik (Rahmenmaterial, Aerodynamik, E-Antrieb, elektronische Schaltung) und Fertigung (Stückkosten, Qualitätsstreuung, Automatisierung, zweites Werk).
+- **Phasenziel 3:** „Marktführer im Heimatland werden“ (25 % Marktanteil, 3 Mio. €); Phase 4 folgt.
+- **Optionen** liegen hinter dem Zahnrad in der Kopfzeile.
 - **Technik:** eigener Big-Number-Typ, Autosave alle 30 s, Export/Import als Text, Flat-UI im Hochformat.
 
 ## Projekt öffnen
@@ -40,7 +44,7 @@ godot --path . --resolution 720x1280 res://tools/screenshot.tscn -- --out=/tmp/s
 
 Die Tests laufen auch in GitHub Actions bei jedem Push.
 
-Simulierte Zeit (Bot, Median): Phase-1-Ziel bei 4 / 2 / 0,5 Tipps/s nach ≈ 14 / 25 / 60 min, Phase-2-Ziel nach ≈ 41 / 60 / 106 min.
+Simulierte Zeit (Bot, Median): Phase-1-Ziel bei 4 / 2 / 0,5 Tipps/s nach ≈ 14 / 25 / 60 min, Phase-2-Ziel nach ≈ 41 / 60 / 106 min, Phase-3-Ziel bei 4 / 2 Tipps/s nach ≈ 66 / 90 min.
 
 ## Aufbau
 
@@ -65,6 +69,7 @@ Die Debug-APK lässt sich direkt aufs Handy laden („Installation aus unbekannt
 
 ## Nächste Meilensteine
 
-1. **Phase 3 – Radmarke:** eigene Modelle, Forschungsbaum, Know-how-Äste Technik und Fertigung, Legende-Perk-Baum.
-2. **Reparatur-Minispiel** für knifflige Fälle (Ablauf noch offen im GDD).
-3. Phasen 4–6 (Märkte), danach der Team-Teil (Phasen 7–13).
+1. **Legende-Perk-Baum** (Gründer, Automatik, Erbe) – macht den ersten Prestige nach Phase 3 rund.
+2. **Phase 4 – National:** Regionen mit Spartenvorlieben, Marketingkampagnen.
+3. **Reparatur-Minispiel** für knifflige Fälle (Ablauf noch offen im GDD).
+4. Phasen 5–6 (Europa, International), danach der Team-Teil (Phasen 7–13).

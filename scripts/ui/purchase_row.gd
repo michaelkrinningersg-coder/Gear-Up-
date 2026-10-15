@@ -45,8 +45,11 @@ func set_state(level_text: String, effect_text: String, button_text: String, ena
 static func effect_text(def: Dictionary, level: int) -> String:
 	if level <= 0:
 		return ""
+	var effect := str(def["effect"])
+	if not effect.contains("%s"):
+		return effect
 	var total := level * float(def["value"]) * float(def.get("effect_scale", 1.0))
-	return "Gesamt: " + (str(def["effect"]) % NumberFormat.num(total))
+	return "Gesamt: " + (effect % NumberFormat.num(total))
 
 
 static func level_text(def: Dictionary, level: int) -> String:

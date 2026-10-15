@@ -35,24 +35,22 @@ func _capture(path: String) -> void:
 
 func _prepare_state(m: GameModel) -> void:
 	m.wipe()
-	m.phase = 2
-	m.money = BigNumber.of(38420.0)
-	m.reputation = BigNumber.of(520.0)
-	m.knowhow = BigNumber.of(42.0)
-	m.run_money = BigNumber.of(160000.0)
-	m.run_time = 31.0 * 60.0
-	m.run_orders = 412
-	m.run_sales = 37
-	m.upgrades = {"toolbox": 14, "apprentice": 9, "parts_shelf": 8, "repair_stand": 5,
-		"salesperson": 2, "storage": 2, "sales_floor": 1}
-	m.knowhow_levels = {"routine": 4, "keen_eye": 2}
+	m.phase = 3
+	m.money = BigNumber.of(412000.0)
+	m.reputation = BigNumber.of(1840.0)
+	m.knowhow = BigNumber.of(37.0)
+	m.run_money = BigNumber.of(2.4e6)
+	m.run_time = 47.0 * 60.0
+	m.run_orders = 1312
+	m.run_sales = 388
+	m.upgrades = {"toolbox": 24, "apprentice": 19, "parts_shelf": 15, "repair_stand": 9,
+		"salesperson": 9, "storage": 8, "sales_floor": 7, "workbenches": 5, "test_track": 4, "bikefitting": 4,
+		"factory": 4, "design_office": 2, "dealers": 2, "test_lab": 1}
+	m.knowhow_levels = {"routine": 10, "keen_eye": 5, "master_hand": 5, "frame_material": 1, "aero": 1, "unit_cost": 1}
+	m.brand = {"city": {"gen": 2, "class": 0}, "trekking": {"gen": 1, "class": 1}}
+	m.dev_project = {"sparte": "mtb", "work": 1900.0}
 	m.board.clear()
 	m._fill_board()
 	m._restock()
-	m.shop_queue.append({"bike": "trekking", "wait": 18.0})
+	m.shop_queue.append({"bike": "road", "wait": 18.0})
 	m.shop_queue.append({"bike": "city", "wait": 9.0})
-	m.stock["trekking"] = 0
-	m.shop_queue.append({"bike": "trekking", "wait": 22.0})
-	m.accept_order(0)
-	for i in 3:
-		m.tap()

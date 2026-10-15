@@ -1,6 +1,8 @@
 class_name HeaderBar
 extends PanelContainer
-## Kopfzeile: Phase, Legende-Bonus und die drei Run-Währungen.
+## Kopfzeile: Phase, Legende-Bonus, die drei Run-Währungen und der Weg zu den Optionen.
+
+signal options_pressed
 
 var _phase: Label
 var _legend: Label
@@ -19,6 +21,14 @@ func _init() -> void:
 	top.add_child(UI.spacer())
 	_legend = UI.tint(UI.label("", "MutedLabel"), UiTheme.LEGEND)
 	top.add_child(_legend)
+	var options := UI.button("", func() -> void: options_pressed.emit(), "NavButton")
+	options.icon = UI.icon_texture("nav_options")
+	options.custom_minimum_size = Vector2(52, 40)
+	options.add_theme_constant_override("icon_max_width", 30)
+	var compact := UiTheme.box(Color(0, 0, 0, 0), 12, 4)
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		options.add_theme_stylebox_override(state, compact)
+	top.add_child(options)
 	var row := UI.hbox(8)
 	v.add_child(row)
 	_money = _chip(row, "money", 1.3)

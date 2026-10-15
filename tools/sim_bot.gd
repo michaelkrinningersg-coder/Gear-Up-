@@ -51,6 +51,8 @@ func step(dt: float) -> void:
 	_tap_budget += taps_per_second * dt
 	while _tap_budget >= 1.0:
 		_tap_budget -= 1.0
+		if model.design_tap():
+			continue
 		if model.shop_open() and model.serviceable_customer() >= 0:
 			model.sell()
 			continue
@@ -89,6 +91,7 @@ func _best_order() -> int:
 
 
 func _shop() -> void:
+	_manage_brand()
 	var bought := true
 	while bought:
 		bought = false
@@ -113,6 +116,26 @@ func _shop() -> void:
 					bought = true
 
 
+func _manage_brand() -> void:
+	if not model.brand_open():
+		return
+	var def := model.phase_def()
+	var share_goal := float(def.get("goal_share", 0.0))
+	var want_share := share_goal > 0.0 and model.market_share() / share_goal < model.money.to_float() / float(def["goal_money"])
+	for s in Balance.SPARTEN:
+		model.set_price_class(s["id"], 0 if want_share else Balance.DEFAULT_PRICE_CLASS)
+	if not model.dev_project.is_empty():
+		return
+	var best := ""
+	for s in Balance.SPARTEN:
+		if model.can_start_dev(s["id"]) and model.dev_cost(s["id"]).lte(model.money.mul_f(spend_fraction)):
+			if best == "" or model.dev_cost(s["id"]).lt(model.dev_cost(best)):
+				best = s["id"]
+	if best != "":
+		model.start_dev(best)
+		_mark("Modell %s %d" % [best, model.generation(best) + 1])
+
+
 func _mark_subgoals() -> void:
 	var def := model.phase_def()
 	var p := model.phase
@@ -122,6 +145,8 @@ func _mark_subgoals() -> void:
 		_mark("P%d Geld" % p)
 	if model.knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0))):
 		_mark("P%d Know-how" % p)
+	if model.market_share() >= float(def.get("goal_share", 0.0)):
+		_mark("P%d Anteil" % p)
 
 
 func _on_tier_changed(tier: int) -> void:

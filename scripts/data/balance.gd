@@ -128,7 +128,62 @@ const UPGRADES := {
 		"value": 1.0, "base_cost": 150000.0, "growth": 1.0,
 		"effect": "+%s %% Kundschaft", "effect_scale": 100.0,
 	},
+	# --- Phase 3: Radmarke ---
+	"design_office": {
+		"name": "Konstruktionsbüro", "phase": 3,
+		"desc": "Ingenieure entwickeln neue Modelle auch ohne dich weiter.",
+		"value": 25.0, "base_cost": 40000.0, "growth": 1.6,
+		"effect": "%s Entwicklung/s (ohne Boni)", "effect_scale": 1.0,
+	},
+	"factory": {
+		"name": "Fertigung", "phase": 3,
+		"desc": "Erst Zulieferer, dann die eigene Halle: mehr Räder pro Sekunde.",
+		"value": 0.6, "base_cost": 30000.0, "growth": 1.45,
+		"effect": "+%s Räder/s", "effect_scale": 1.0,
+	},
+	"dealers": {
+		"name": "Händlernetz", "phase": 3, "max_level": 8,
+		"desc": "Mehr Fachhändler im Land führen deine Räder.",
+		"value": 0.1, "base_cost": 50000.0, "growth": 1.8,
+		"effect": "+%s %% Reichweite", "effect_scale": 100.0,
+	},
+	"test_lab": {
+		"name": "Testlabor", "phase": 3,
+		"desc": "Prüfstände und Dauertests: bessere Qualität aller Modelle.",
+		"value": 0.1, "base_cost": 80000.0, "growth": 1.75,
+		"effect": "+%s %% Qualität", "effect_scale": 100.0,
+	},
 }
+
+# --- Radmarke (Phase 3) -----------------------------------------------------
+
+## Sparten der eigenen Marke. market = Räder/s im Heimatmarkt,
+## competitor = Stärke der fiktiven Konkurrenz (Qualitätspunkte).
+const SPARTEN := [
+	{"id": "city", "name": "Citybike", "price": 420.0, "market": 30.0, "competitor": 6.0, "dev_cost": 20000.0, "dev_work": 2500.0},
+	{"id": "trekking", "name": "Trekkingrad", "price": 700.0, "market": 25.0, "competitor": 6.0, "dev_cost": 35000.0, "dev_work": 3500.0},
+	{"id": "mtb", "name": "Mountainbike", "price": 1200.0, "market": 20.0, "competitor": 7.0, "dev_cost": 60000.0, "dev_work": 5000.0},
+	{"id": "road", "name": "Rennrad", "price": 2000.0, "market": 15.0, "competitor": 8.0, "dev_cost": 100000.0, "dev_work": 7000.0},
+	{"id": "ebike", "name": "E-Bike", "price": 3200.0, "market": 25.0, "competitor": 8.0, "dev_cost": 150000.0, "dev_work": 9000.0, "requires": "e_drive"},
+]
+## Generation = Rahmenmaterial; die Obergrenze setzt der Know-how-Knoten „Rahmenmaterial".
+const MATERIALS := ["Stahl", "Alu", "Carbon", "Titan"]
+const GEN_COST_GROWTH := 4.0
+const GEN_WORK_GROWTH := 3.0
+const GEN_PRICE_BONUS := 0.25
+## Baukasten: Preisklasse bestimmt Preis, Attraktivität und Stückkosten (Anteil am Preis).
+const PRICE_CLASSES := [
+	{"name": "Einsteiger", "price": 0.75, "appeal": 1.35, "cost": 0.72},
+	{"name": "Mittelklasse", "price": 1.0, "appeal": 1.0, "cost": 0.65},
+	{"name": "Premium", "price": 1.5, "appeal": 0.7, "cost": 0.58},
+]
+const DEFAULT_PRICE_CLASS := 1
+const BRAND_BASE_PRODUCTION := 1.0
+const BRAND_BASE_REACH := 0.25
+const BRAND_REP_PER_BIKE := 0.3
+## Know-how aus jeder fertigen Modellgeneration (× Generation).
+const DEV_KNOWHOW := 15.0
+const BRAND_COMPETITORS := ["Velonord", "Rheinrad", "Alpenwerk", "Kettenblatt & Söhne"]
 
 # --- Radladen (Phase 2) ------------------------------------------------------
 
@@ -177,6 +232,54 @@ const KNOWHOW_NODES := {
 		"value": 1.0, "base_cost": 5.0, "growth": 2.2,
 		"effect": "+%s Know-how pro kniffligem Fall", "effect_scale": 1.0,
 	},
+	"frame_material": {
+		"name": "Rahmenmaterial", "branch": "tech", "max_level": 3,
+		"desc": "Alu, Carbon, Titan: jede Stufe erlaubt eine weitere Modellgeneration.",
+		"value": 1.0, "base_cost": 20.0, "growth": 3.0,
+		"effect": "+%s Generationen", "effect_scale": 1.0,
+	},
+	"aero": {
+		"name": "Aerodynamik", "branch": "tech", "max_level": 5,
+		"desc": "Windschnittige Rahmen: mehr Qualität für alle Modelle.",
+		"value": 0.1, "base_cost": 10.0, "growth": 1.8,
+		"effect": "+%s %% Qualität", "effect_scale": 100.0,
+	},
+	"e_drive": {
+		"name": "E-Antrieb", "branch": "tech", "max_level": 1,
+		"desc": "Schaltet die Sparte E-Bike frei.",
+		"value": 1.0, "base_cost": 40.0, "growth": 1.0,
+		"effect": "E-Bikes entwickelbar", "effect_scale": 1.0,
+	},
+	"e_shifting": {
+		"name": "Elektronische Schaltung", "branch": "tech", "max_level": 5,
+		"desc": "Hightech-Ausstattung: höherer Verkaufspreis.",
+		"value": 0.08, "base_cost": 15.0, "growth": 1.9,
+		"effect": "+%s %% Verkaufspreis Marke", "effect_scale": 100.0,
+	},
+	"unit_cost": {
+		"name": "Stückkosten", "branch": "production", "max_level": 5,
+		"desc": "Bessere Einkaufskonditionen und weniger Verschnitt.",
+		"value": 0.06, "base_cost": 8.0, "growth": 1.8,
+		"effect": "−%s %% Stückkosten", "effect_scale": 100.0,
+	},
+	"quality_spread": {
+		"name": "Qualitätsstreuung", "branch": "production", "max_level": 5,
+		"desc": "Gleichmäßigere Fertigung: mehr Qualität.",
+		"value": 0.08, "base_cost": 10.0, "growth": 1.8,
+		"effect": "+%s %% Qualität", "effect_scale": 100.0,
+	},
+	"automation": {
+		"name": "Automatisierung", "branch": "production", "max_level": 10,
+		"desc": "Roboter am Band: mehr Produktion.",
+		"value": 0.2, "base_cost": 12.0, "growth": 1.7,
+		"effect": "+%s %% Produktion", "effect_scale": 100.0,
+	},
+	"second_plant": {
+		"name": "Zweites Werk", "branch": "production", "max_level": 1,
+		"desc": "Ein zweites Werk verdoppelt die Produktion.",
+		"value": 1.0, "base_cost": 80.0, "growth": 1.0,
+		"effect": "+%s %% Produktion", "effect_scale": 100.0,
+	},
 }
 
 ## Phasenleiter. goal_* gelten für den Aufstieg aus dieser Phase.
@@ -192,7 +295,11 @@ const PHASES := [
 		"goal_title": "Ersten eigenen Rahmen bauen",
 		"goal_rep": 1500.0, "goal_money": 250000.0, "goal_knowhow": 150.0,
 	},
-	{"name": "Radmarke", "playable": false, "goal_title": "Marktanteil Heimatland", "goal_rep": 0.0, "goal_money": 0.0},
+	{
+		"name": "Radmarke", "playable": true,
+		"goal_title": "Marktführer im Heimatland werden",
+		"goal_rep": 0.0, "goal_money": 3000000.0, "goal_share": 0.25,
+	},
 	{"name": "National", "playable": false, "goal_title": "Marktanteil Inland", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "Europa", "playable": false, "goal_title": "Präsenz in Europa", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "International", "playable": false, "goal_title": "Continental-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
@@ -207,6 +314,13 @@ const PHASES := [
 
 static var _templates_by_id := {}
 static var _templates_by_kind := {}
+
+
+static func sparte(id: String) -> Dictionary:
+	for s in SPARTEN:
+		if s["id"] == id:
+			return s
+	return {}
 
 
 static func bike(id: String) -> Dictionary:

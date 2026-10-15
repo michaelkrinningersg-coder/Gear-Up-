@@ -10,6 +10,9 @@ var _goal_money_bar: ProgressBar
 var _goal_knowhow_row: Control
 var _goal_knowhow_label: Label
 var _goal_knowhow_bar: ProgressBar
+var _goal_share_row: Control
+var _goal_share_label: Label
+var _goal_share_bar: ProgressBar
 var _goal_button: Button
 
 var _active_card: PanelContainer
@@ -74,6 +77,10 @@ func _build_goal() -> PanelContainer:
 	_goal_knowhow_label = kh[0]
 	_goal_knowhow_bar = kh[1]
 	_goal_knowhow_row = _goal_knowhow_label.get_parent()
+	var share := _goal_row(v, "share", UiTheme.ACCENT)
+	_goal_share_label = share[0]
+	_goal_share_bar = share[1]
+	_goal_share_row = _goal_share_label.get_parent()
 	_goal_button = UI.button("", _on_goal_pressed)
 	_goal_button.custom_minimum_size.y = 76
 	v.add_child(_goal_button)
@@ -186,16 +193,24 @@ func _refresh_goal() -> void:
 	var def := model.phase_def()
 	var rep_goal := float(def["goal_rep"])
 	var money_goal := float(def["goal_money"])
+	var knowhow_goal := float(def.get("goal_knowhow", 0.0))
+	var share_goal := float(def.get("goal_share", 0.0))
 	_goal_title.text = "Ziel: " + str(def["goal_title"])
-	_goal_rep_label.text = "%s / %s Ruf" % [NumberFormat.big(model.reputation), NumberFormat.num(rep_goal, 0)]
-	_goal_rep_bar.value = clampf(model.reputation.to_float() / rep_goal, 0.0, 1.0)
+	_goal_rep_label.get_parent().visible = rep_goal > 0.0
+	if rep_goal > 0.0:
+		_goal_rep_label.text = "%s / %s Ruf" % [NumberFormat.big(model.reputation), NumberFormat.num(rep_goal, 0)]
+		_goal_rep_bar.value = clampf(model.reputation.to_float() / rep_goal, 0.0, 1.0)
 	_goal_money_label.text = "%s / %s" % [NumberFormat.money(model.money), NumberFormat.money(BigNumber.of(money_goal))]
 	_goal_money_bar.value = clampf(model.money.to_float() / money_goal, 0.0, 1.0)
-	var knowhow_goal := float(def.get("goal_knowhow", 0.0))
 	_goal_knowhow_row.visible = knowhow_goal > 0.0
 	if knowhow_goal > 0.0:
 		_goal_knowhow_label.text = "%s / %s Know-how" % [NumberFormat.big(model.knowhow), NumberFormat.num(knowhow_goal, 0)]
 		_goal_knowhow_bar.value = clampf(model.knowhow.to_float() / knowhow_goal, 0.0, 1.0)
+	_goal_share_row.visible = share_goal > 0.0
+	if share_goal > 0.0:
+		var share := model.market_share()
+		_goal_share_label.text = "%s / %s Marktanteil" % [NumberFormat.percent(share), NumberFormat.percent(share_goal)]
+		_goal_share_bar.value = clampf(share / share_goal, 0.0, 1.0)
 	_goal_button.visible = model.phase_goal_met()
 	if model.can_advance_phase():
 		_goal_button.text = str(def["goal_title"])

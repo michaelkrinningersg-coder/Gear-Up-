@@ -8,6 +8,7 @@ signal upgrades_changed
 signal order_completed(order: Dictionary, reward: Dictionary, by_apprentice: bool)
 signal customer_tier_changed(tier: int)
 signal sale_completed(bike_id: String, reward: Dictionary, by_staff: bool)
+signal model_developed(sparte_id: String, generation: int)
 signal phase_changed
 signal run_reset
 
@@ -37,6 +38,11 @@ var shop_arrivals := 0.0
 var shop_serve_progress := 0.0
 var run_sales := 0
 var missed_customers := 0
+# Radmarke (Phase 3): Sparte -> {"gen": int, "class": int}
+var brand: Dictionary = {}
+## Laufende Entwicklung: {"sparte": id, "work": float} oder leer.
+var dev_project: Dictionary = {}
+var run_bikes_built := 0.0
 
 # --- Dauerhaft -----------------------------------------------------------------
 
@@ -82,6 +88,9 @@ func reset_run() -> void:
 	shop_serve_progress = 0.0
 	run_sales = 0
 	missed_customers = 0
+	brand = {}
+	dev_project = {}
+	run_bikes_built = 0.0
 	_last_tier = customer_tier()
 	board.clear()
 	_fill_board()
@@ -215,6 +224,8 @@ func tick(delta: float) -> void:
 	total_time += delta
 	if shop_open():
 		_tick_shop(delta)
+	if brand_open():
+		_tick_brand(delta)
 	var rate := apprentice_rate()
 	if rate <= 0.0:
 		return
@@ -453,6 +464,197 @@ func _offline_shop(seconds: float, report: Dictionary) -> void:
 	report["rep"] = gained["rep"]
 
 
+# --- Radmarke (Phase 3) --------------------------------------------------------
+
+func brand_open() -> bool:
+	return phase >= 3
+
+
+func generation(sparte_id: String) -> int:
+	return int(brand.get(sparte_id, {}).get("gen", 0))
+
+
+func price_class(sparte_id: String) -> int:
+	return int(brand.get(sparte_id, {}).get("class", Balance.DEFAULT_PRICE_CLASS))
+
+
+func set_price_class(sparte_id: String, index: int) -> void:
+	if generation(sparte_id) <= 0:
+		return
+	brand[sparte_id]["class"] = clampi(index, 0, Balance.PRICE_CLASSES.size() - 1)
+
+
+## Höchste entwickelbare Generation (Stahl = 1, mit Rahmenmaterial bis Titan = 4).
+func max_generation() -> int:
+	return mini(1 + knowhow_level("frame_material"), Balance.MATERIALS.size())
+
+
+func sparte_unlocked(sparte_id: String) -> bool:
+	var requirement := str(Balance.sparte(sparte_id).get("requires", ""))
+	return requirement == "" or knowhow_level(requirement) > 0
+
+
+func dev_cost(sparte_id: String) -> BigNumber:
+	var s := Balance.sparte(sparte_id)
+	return BigNumber.of(s["dev_cost"]).mul(BigNumber.of(Balance.GEN_COST_GROWTH).pow_f(generation(sparte_id)))
+
+
+func dev_work(sparte_id: String) -> float:
+	return float(Balance.sparte(sparte_id)["dev_work"]) * pow(Balance.GEN_WORK_GROWTH, generation(sparte_id))
+
+
+func can_start_dev(sparte_id: String) -> bool:
+	return brand_open() and dev_project.is_empty() and sparte_unlocked(sparte_id) \
+		and generation(sparte_id) < max_generation() and money.gte(dev_cost(sparte_id))
+
+
+func start_dev(sparte_id: String) -> bool:
+	if not can_start_dev(sparte_id):
+		return false
+	money = money.sub(dev_cost(sparte_id))
+	dev_project = {"sparte": sparte_id, "work": 0.0}
+	return true
+
+
+func design_rate() -> float:
+	return _upgrade_value("design_office") * upgrade_level("design_office") * speed_mult()
+
+
+## Ein Tipp auf „Konstruieren": dieselbe Handarbeit wie in der Werkstatt.
+func design_tap() -> bool:
+	if dev_project.is_empty():
+		return false
+	total_taps += 1
+	_add_design_work(tap_power())
+	return true
+
+
+func _add_design_work(amount: float) -> void:
+	if dev_project.is_empty():
+		return
+	dev_project["work"] = float(dev_project["work"]) + amount
+	var sparte_id: String = dev_project["sparte"]
+	if dev_project["work"] < dev_work(sparte_id):
+		return
+	var gen := generation(sparte_id) + 1
+	brand[sparte_id] = {"gen": gen, "class": price_class(sparte_id)}
+	dev_project = {}
+	knowhow = knowhow.add(BigNumber.of(Balance.DEV_KNOWHOW * gen))
+	model_developed.emit(sparte_id, gen)
+
+
+func brand_quality(sparte_id: String) -> float:
+	var bonus := 1.0 + _upgrade_value("test_lab") * upgrade_level("test_lab") \
+		+ _knowhow_value("aero") * knowhow_level("aero") \
+		+ _knowhow_value("quality_spread") * knowhow_level("quality_spread")
+	return generation(sparte_id) * bonus
+
+
+func brand_price(sparte_id: String) -> float:
+	var s := Balance.sparte(sparte_id)
+	var cls: Dictionary = Balance.PRICE_CLASSES[price_class(sparte_id)]
+	var gen_factor := 1.0 + Balance.GEN_PRICE_BONUS * (generation(sparte_id) - 1)
+	var tech := 1.0 + _knowhow_value("e_shifting") * knowhow_level("e_shifting")
+	return float(s["price"]) * float(cls["price"]) * gen_factor * tech
+
+
+func brand_unit_cost(sparte_id: String) -> float:
+	var s := Balance.sparte(sparte_id)
+	var cls: Dictionary = Balance.PRICE_CLASSES[price_class(sparte_id)]
+	var gen_factor := 1.0 + Balance.GEN_PRICE_BONUS * (generation(sparte_id) - 1)
+	var saving := 1.0 - _knowhow_value("unit_cost") * knowhow_level("unit_cost")
+	return float(s["price"]) * float(cls["price"]) * gen_factor * float(cls["cost"]) * saving
+
+
+## Anteil, den das Modell bei voller Reichweite gegen die Konkurrenz holen würde.
+func brand_appeal_share(sparte_id: String) -> float:
+	if generation(sparte_id) <= 0:
+		return 0.0
+	var appeal := brand_quality(sparte_id) * float(Balance.PRICE_CLASSES[price_class(sparte_id)]["appeal"])
+	return appeal / (appeal + float(Balance.sparte(sparte_id)["competitor"]))
+
+
+func brand_reach() -> float:
+	return minf(1.0, Balance.BRAND_BASE_REACH + _upgrade_value("dealers") * upgrade_level("dealers"))
+
+
+func production_capacity() -> float:
+	var base := Balance.BRAND_BASE_PRODUCTION + _upgrade_value("factory") * upgrade_level("factory")
+	var automation := 1.0 + _knowhow_value("automation") * knowhow_level("automation")
+	var plants := 1.0 + _knowhow_value("second_plant") * knowhow_level("second_plant")
+	return base * automation * plants
+
+
+## Verkäufe je Sparte (Räder/s): Nachfrage, gedeckelt durch die Produktion,
+## die anteilig zur Nachfrage verteilt wird.
+func brand_rates() -> Dictionary:
+	var demand := {}
+	var total_demand := 0.0
+	for s in Balance.SPARTEN:
+		var d := float(s["market"]) * brand_appeal_share(s["id"]) * brand_reach()
+		demand[s["id"]] = d
+		total_demand += d
+	var fill := 1.0 if total_demand <= 0.0 else minf(1.0, production_capacity() / total_demand)
+	var units := {}
+	var total_units := 0.0
+	var profit := 0.0
+	for s in Balance.SPARTEN:
+		var sold: float = demand[s["id"]] * fill
+		units[s["id"]] = sold
+		total_units += sold
+		if sold > 0.0:
+			profit += sold * (brand_price(s["id"]) - brand_unit_cost(s["id"]))
+	return {
+		"units": units, "total_units": total_units, "demand": total_demand,
+		"profit": profit * legend_mult(), "rep": total_units * Balance.BRAND_REP_PER_BIKE * reputation_mult(),
+	}
+
+
+func market_size() -> float:
+	var total := 0.0
+	for s in Balance.SPARTEN:
+		total += float(s["market"])
+	return total
+
+
+func market_share() -> float:
+	if not brand_open():
+		return 0.0
+	return brand_rates()["total_units"] / market_size()
+
+
+func _tick_brand(delta: float) -> void:
+	_add_design_work(design_rate() * delta)
+	var rates := brand_rates()
+	if rates["total_units"] <= 0.0:
+		return
+	run_bikes_built += rates["total_units"] * delta
+	_gain({
+		"money": BigNumber.of(rates["profit"] * delta),
+		"rep": BigNumber.of(rates["rep"] * delta),
+		"knowhow": BigNumber.zero(),
+	})
+
+
+func _offline_brand(seconds: float, report: Dictionary) -> void:
+	if not brand_open():
+		return
+	var rates := brand_rates()
+	if rates["total_units"] <= 0.0:
+		return
+	var factor := seconds * Balance.OFFLINE_RATE
+	var gained := {
+		"money": BigNumber.of(rates["profit"]).mul_f(factor),
+		"rep": BigNumber.of(rates["rep"]).mul_f(factor),
+		"knowhow": BigNumber.zero(),
+	}
+	_gain(gained)
+	run_bikes_built += rates["total_units"] * factor
+	report["bikes"] = int(rates["total_units"] * factor)
+	report["money"] = report["money"].add(gained["money"])
+	report["rep"] = report["rep"].add(gained["rep"])
+
+
 # --- Ausbau --------------------------------------------------------------------
 
 func upgrade_cost(id: String) -> BigNumber:
@@ -529,7 +731,8 @@ func phase_goal_met() -> bool:
 	var def := phase_def()
 	return reputation.gte(BigNumber.of(def["goal_rep"])) \
 		and money.gte(BigNumber.of(def["goal_money"])) \
-		and knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0)))
+		and knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0))) \
+		and market_share() >= float(def.get("goal_share", 0.0))
 
 
 func can_advance_phase() -> bool:
@@ -580,6 +783,7 @@ func apply_offline(seconds: float) -> Dictionary:
 	if seconds <= 0.0:
 		return report
 	_offline_shop(seconds, report)
+	_offline_brand(seconds, report)
 	var rate := apprentice_rate() * Balance.OFFLINE_RATE
 	if rate <= 0.0:
 		return report
@@ -638,6 +842,9 @@ func to_dict() -> Dictionary:
 		"shop_serve_progress": shop_serve_progress,
 		"run_sales": run_sales,
 		"missed_customers": missed_customers,
+		"brand": brand.duplicate(true),
+		"dev_project": dev_project.duplicate(),
+		"run_bikes_built": run_bikes_built,
 		"legend": legend.to_save(),
 		"prestige_count": prestige_count,
 		"lifetime_money": lifetime_money.to_save(),
@@ -691,6 +898,21 @@ func from_dict(d: Dictionary) -> void:
 	shop_serve_progress = float(d.get("shop_serve_progress", 0.0))
 	run_sales = int(d.get("run_sales", 0))
 	missed_customers = int(d.get("missed_customers", 0))
+	brand = {}
+	var saved_brand: Variant = d.get("brand")
+	if saved_brand is Dictionary:
+		for id in saved_brand:
+			var entry: Variant = saved_brand[id]
+			if not Balance.sparte(str(id)).is_empty() and entry is Dictionary:
+				brand[str(id)] = {
+					"gen": clampi(int(entry.get("gen", 0)), 0, Balance.MATERIALS.size()),
+					"class": clampi(int(entry.get("class", Balance.DEFAULT_PRICE_CLASS)), 0, Balance.PRICE_CLASSES.size() - 1),
+				}
+	dev_project = {}
+	var saved_dev: Variant = d.get("dev_project")
+	if saved_dev is Dictionary and not Balance.sparte(str(saved_dev.get("sparte", ""))).is_empty():
+		dev_project = {"sparte": str(saved_dev["sparte"]), "work": maxf(0.0, float(saved_dev.get("work", 0.0)))}
+	run_bikes_built = float(d.get("run_bikes_built", 0.0))
 	legend = BigNumber.from_save(d.get("legend"))
 	prestige_count = int(d.get("prestige_count", 0))
 	lifetime_money = BigNumber.from_save(d.get("lifetime_money"))

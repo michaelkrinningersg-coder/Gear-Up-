@@ -4,11 +4,15 @@ extends Control
 const PAGES := [
 	["Werkstatt", "nav_workshop"],
 	["Laden", "nav_shop"],
+	["Marke", "nav_brand"],
 	["Ausbau", "nav_upgrades"],
 	["Know-how", "nav_knowhow"],
 	["Legende", "nav_legend"],
-	["Optionen", "nav_options"],
 ]
+const SHOP_PAGE := 1
+const BRAND_PAGE := 2
+## Optionen haben keinen Tab, sondern das Zahnrad in der Kopfzeile.
+const OPTIONS_PAGE := 6
 
 var _header: HeaderBar
 var _pages: Array[Page] = []
@@ -39,6 +43,7 @@ func _ready() -> void:
 	var column := UI.vbox(16)
 	margin.add_child(column)
 	_header = HeaderBar.new()
+	_header.options_pressed.connect(func() -> void: _show_page(OPTIONS_PAGE))
 	column.add_child(_header)
 
 	var stack := Control.new()
@@ -53,7 +58,7 @@ func _ready() -> void:
 	add_child(_fx)
 
 	var model := Game.model
-	_pages = [WorkshopPage.new(), ShopPage.new(), UpgradesPage.new(), KnowhowPage.new(), LegendPage.new(), OptionsPage.new()]
+	_pages = [WorkshopPage.new(), ShopPage.new(), BrandPage.new(), UpgradesPage.new(), KnowhowPage.new(), LegendPage.new(), OptionsPage.new()]
 	for page in _pages:
 		page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		stack.add_child(page)
@@ -69,8 +74,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	_nav[1].visible = Game.model.shop_open()
-	if _current == 1 and not Game.model.shop_open():
+	_nav[SHOP_PAGE].visible = Game.model.shop_open()
+	_nav[BRAND_PAGE].visible = Game.model.brand_open()
+	if _current < _nav.size() and not _nav[_current].visible:
 		_show_page(0)
 	_header.refresh(Game.model)
 	_pages[_current].refresh()
@@ -82,6 +88,7 @@ func _build_nav() -> Control:
 	var row := UI.hbox(4)
 	bar.add_child(row)
 	var group := ButtonGroup.new()
+	group.allow_unpress = true
 	for i in PAGES.size():
 		var b := Button.new()
 		b.theme_type_variation = "NavButton"
@@ -104,7 +111,8 @@ func _show_page(index: int) -> void:
 	_current = index
 	for i in _pages.size():
 		_pages[i].visible = i == index
-	_nav[index].button_pressed = true
+	for i in _nav.size():
+		_nav[i].set_pressed_no_signal(i == index)
 	_pages[index].refresh()
 
 
@@ -113,7 +121,9 @@ func _on_phase_changed() -> void:
 	if phase > _last_phase:
 		UI.toast(_fx, "Phase %d: %s – geschafft!" % [phase, Balance.phase_def(phase)["name"]], UiTheme.MONEY)
 		if phase == 2:
-			_show_page(1)
+			_show_page(SHOP_PAGE)
+		elif phase == 3:
+			_show_page(BRAND_PAGE)
 	_last_phase = phase
 
 
@@ -128,6 +138,8 @@ func _show_offline_report(report: Dictionary) -> void:
 		work.append("dein Lehrling %s Aufträge erledigt" % NumberFormat.num(report["orders"], 0))
 	if int(report.get("sales", 0)) > 0:
 		work.append("dein Verkäufer %s Räder verkauft" % NumberFormat.num(report["sales"], 0))
+	if int(report.get("bikes", 0)) > 0:
+		work.append("deine Marke %s Räder abgesetzt" % NumberFormat.num(report["bikes"], 0))
 	var body := "Du warst %s weg. In der Zeit hat mit halber Kraft %s:\n\n+%s   ·   +%s Ruf" % [
 		NumberFormat.duration(report["seconds"]),
 		" und ".join(work),

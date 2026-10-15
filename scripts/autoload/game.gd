@@ -105,7 +105,7 @@ func _apply_offline(seconds: float) -> void:
 	if seconds <= 0.0:
 		return
 	var report := model.apply_offline(seconds)
-	if seconds >= Balance.OFFLINE_REPORT_MIN_SECONDS and (int(report["orders"]) > 0 or int(report["sales"]) > 0):
+	if seconds >= Balance.OFFLINE_REPORT_MIN_SECONDS and (int(report["orders"]) > 0 or int(report["sales"]) > 0 or int(report.get("bikes", 0)) > 0):
 		offline_report = report
 		offline_progress.emit(report)
 

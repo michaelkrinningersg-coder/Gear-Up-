@@ -312,3 +312,87 @@ func test_phase_two_goal_needs_knowhow() -> void:
 	check(not m.phase_goal_met(), "Ohne Know-how nicht erreicht")
 	m.knowhow = BigNumber.of(def["goal_knowhow"])
 	check(m.phase_goal_met(), "Mit Know-how erreicht")
+
+
+func _brand_model() -> GameModel:
+	var m := _model()
+	m.phase = 3
+	m.money = BigNumber.of(1e6)
+	return m
+
+
+func test_brand_development() -> void:
+	var m := _brand_model()
+	check(m.brand_open(), "Marke offen in Phase 3")
+	check_eq(m.max_generation(), 1, "Ohne Rahmenmaterial nur Stahl")
+	check(not m.sparte_unlocked("ebike"), "E-Bike braucht E-Antrieb")
+	var cost := m.dev_cost("city")
+	check(m.start_dev("city"), "Entwicklung gestartet")
+	check(not m.start_dev("trekking"), "Nur ein Projekt gleichzeitig")
+	check_near(m.money.to_float(), 1e6 - cost.to_float(), 1e-9, "Entwicklungskosten bezahlt")
+	var knowhow_before := m.knowhow.to_float()
+	for i in 100000:
+		m.design_tap()
+		if m.dev_project.is_empty():
+			break
+	check_eq(m.generation("city"), 1, "Gen 1 fertig")
+	check_near(m.knowhow.to_float() - knowhow_before, Balance.DEV_KNOWHOW, 1e-9, "Know-how aus Entwicklung")
+	check(not m.can_start_dev("city"), "Gen 2 braucht Alu")
+	m.knowhow_levels["frame_material"] = 1
+	check(m.can_start_dev("city"), "Mit Alu Gen 2 möglich")
+	check(m.dev_cost("city").gt(cost), "Nächste Generation teurer")
+
+
+func test_brand_economy() -> void:
+	var m := _brand_model()
+	check_eq(m.brand_rates()["total_units"], 0.0, "Ohne Modell keine Verkäufe")
+	m.brand["city"] = {"gen": 1, "class": Balance.DEFAULT_PRICE_CLASS}
+	var rates := m.brand_rates()
+	check(rates["total_units"] > 0.0, "Modell verkauft sich")
+	check(rates["profit"] > 0.0, "Mit Gewinn")
+	check(m.market_share() > 0.0, "Marktanteil")
+	m._restock()  # Laden läuft parallel und bestellt sonst im ersten Tick Ware
+	var money_before := m.money.to_float()
+	m.tick(10.0)
+	check_near(m.money.to_float() - money_before, rates["profit"] * 10.0, 1e-6, "Gewinn pro Sekunde")
+	var mid_share := m.brand_appeal_share("city")
+	m.set_price_class("city", 0)
+	check(m.brand_appeal_share("city") > mid_share, "Einsteiger: mehr Anteil")
+	check(m.brand_price("city") < 420.0, "Einsteiger: niedrigerer Preis")
+	m.set_price_class("city", 2)
+	check(m.brand_appeal_share("city") < mid_share, "Premium: weniger Anteil")
+	m.brand["city"]["gen"] = 2
+	check(m.brand_quality("city") > 1.0, "Höhere Generation: mehr Qualität")
+	m.upgrades["dealers"] = 3
+	check(m.brand_reach() > Balance.BRAND_BASE_REACH, "Händlernetz erhöht Reichweite")
+
+
+func test_brand_production_limit() -> void:
+	var m := _brand_model()
+	m.reputation = BigNumber.of(1e6)
+	m.knowhow_levels = {"e_drive": 1, "frame_material": 3}
+	for s in Balance.SPARTEN:
+		m.brand[s["id"]] = {"gen": 4, "class": 0}
+	m.upgrades["dealers"] = 8
+	var rates := m.brand_rates()
+	check(rates["total_units"] <= m.production_capacity() + 1e-9, "Nie mehr als die Produktion")
+	m.upgrades["factory"] = 50
+	check(m.brand_rates()["total_units"] > rates["total_units"], "Mehr Fertigung, mehr Absatz")
+
+
+func test_brand_goal_offline_and_save() -> void:
+	var m := _brand_model()
+	var def := m.phase_def()
+	m.money = BigNumber.of(def["goal_money"])
+	check(not m.phase_goal_met(), "Ohne Marktanteil kein Aufstieg")
+	m.brand["city"] = {"gen": 1, "class": 0}
+	var report := m.apply_offline(3600.0)
+	check(report.get("bikes", 0) > 0, "Marke verkauft offline")
+	m.start_dev("trekking")
+	m.design_tap()
+	var copy := GameModel.new(5)
+	copy.from_dict(JSON.parse_string(JSON.stringify(m.to_dict(), "", false, true)))
+	check_eq(copy.generation("city"), 1, "Generation gespeichert")
+	check_eq(copy.price_class("city"), 0, "Preisklasse gespeichert")
+	check_eq(copy.dev_project.get("sparte"), "trekking", "Projekt gespeichert")
+	check_near(float(copy.dev_project["work"]), float(m.dev_project["work"]), 1e-9, "Fortschritt gespeichert")
