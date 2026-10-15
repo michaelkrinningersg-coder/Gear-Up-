@@ -1,0 +1,13 @@
+# Godot
+.godot/
+/android/
+*.tmp
+
+# Exporte
+/export/
+*.apk
+*.aab
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
