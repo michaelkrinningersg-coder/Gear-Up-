@@ -14,6 +14,7 @@ var _rows := {}
 var _share_title: Label
 var _region_section: VBoxContainer
 var _region_rows := {}
+var _europe_section: VBoxContainer
 
 
 func _build() -> void:
@@ -54,6 +55,13 @@ func _build() -> void:
 	for r in Balance.REGIONS:
 		_region_section.add_child(_build_region_row(r))
 	content.add_child(_region_section)
+
+	_europe_section = UI.vbox(14)
+	_europe_section.add_child(UI.label("Europa", "TitleLabel"))
+	_europe_section.add_child(UI.label("Länder kosten Eintritt; im Ausland ist die Reichweite anfangs geringer. Präsenz zählt ab %s Marktanteil im Land. Amateurrennen-Sponsoring (eins gleichzeitig) macht Rennräder und Mountainbikes im Land attraktiver und bringt Ruf." % NumberFormat.percent(Balance.PRESENCE_SHARE), "MutedLabel", true))
+	for c in Balance.COUNTRIES:
+		_europe_section.add_child(_build_region_row(c))
+	content.add_child(_europe_section)
 
 	content.add_child(UI.label("Sparten", "TitleLabel"))
 	for s in Balance.SPARTEN:
@@ -111,23 +119,41 @@ func _build_region_row(r: Dictionary) -> PanelContainer:
 	var campaign_bar := UI.progress(UiTheme.LEGEND, 8)
 	info.add_child(campaign_bar)
 	row.add_child(info)
+	var buttons := UI.vbox(8)
+	buttons.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var action := UI.button("", _on_region_action.bind(r["id"]))
 	action.icon = UI.icon_texture("money")
 	action.custom_minimum_size = Vector2(230, 96)
-	action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(action)
-	_region_rows[r["id"]] = {"status": status, "action": action, "bar": campaign_bar}
+	buttons.add_child(action)
+	var sponsor := UI.button("", _on_sponsor.bind(r["id"]), "SecondaryButton")
+	sponsor.add_theme_font_size_override("font_size", 20)
+	sponsor.custom_minimum_size = Vector2(230, 76)
+	buttons.add_child(sponsor)
+	row.add_child(buttons)
+	_region_rows[r["id"]] = {"status": status, "action": action, "bar": campaign_bar, "sponsor": sponsor}
 	return card
 
 
 func _refresh_regions(rates: Dictionary) -> void:
 	_region_section.visible = model.national_open()
+	_europe_section.visible = model.europe_open()
 	if not model.national_open():
 		return
-	for r in Balance.REGIONS:
+	for r in Balance.REGIONS + Balance.COUNTRIES:
 		var rid: String = r["id"]
+		if r.get("abroad", false) and not model.europe_open():
+			continue
 		var row: Dictionary = _region_rows[rid]
 		var action: Button = row["action"]
+		var sponsor: Button = row["sponsor"]
+		sponsor.visible = model.europe_open() and model.region_open(rid)
+		if sponsor.visible:
+			if model.sponsoring.get("region", "") == rid:
+				sponsor.text = "Rennen %s" % NumberFormat.duration(model.sponsoring["time_left"])
+				sponsor.disabled = true
+			else:
+				sponsor.text = "Sponsoring " + NumberFormat.money(model.sponsor_cost(rid))
+				sponsor.disabled = not model.can_sponsor(rid)
 		var size := model.region_market_size(rid)
 		var time_left := model.campaign_time_left(rid)
 		row["bar"].visible = time_left > 0.0
@@ -139,6 +165,8 @@ func _refresh_regions(rates: Dictionary) -> void:
 			continue
 		var sold := float(rates["regions"].get(rid, 0.0))
 		row["status"].text = "Anteil %s · %s Räder/s" % [NumberFormat.percent(sold / size), NumberFormat.num(sold)]
+		if r.get("abroad", false) and sold / size >= Balance.PRESENCE_SHARE:
+			row["status"].text += " · Präsenz"
 		if time_left > 0.0:
 			action.text = "Kampagne\n%s" % NumberFormat.duration(time_left)
 			action.icon = null
@@ -147,6 +175,11 @@ func _refresh_regions(rates: Dictionary) -> void:
 			action.text = "Kampagne\n" + NumberFormat.money(model.campaign_cost(rid))
 			action.icon = UI.icon_texture("money")
 			action.disabled = not model.can_start_campaign(rid)
+
+
+func _on_sponsor(region_id: String) -> void:
+	if model.start_sponsoring(region_id):
+		UI.toast(fx, "Amateurrennen in %s gesponsert" % Balance.region(region_id)["name"], UiTheme.REPUTATION)
 
 
 func _on_region_action(region_id: String) -> void:
@@ -159,7 +192,10 @@ func _on_region_action(region_id: String) -> void:
 
 func refresh() -> void:
 	var rates := model.brand_rates()
-	_share_title.text = "Marktanteil Inland" if model.national_open() else "Marktanteil Heimatland"
+	if model.europe_open():
+		_share_title.text = "Marktanteil Europa (inkl. Inland)"
+	else:
+		_share_title.text = "Marktanteil Inland" if model.national_open() else "Marktanteil Heimatland"
 	_refresh_regions(rates)
 	var goal := float(model.phase_def().get("goal_share", 0.0))
 	var share := model.market_share()

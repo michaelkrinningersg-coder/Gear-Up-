@@ -47,6 +47,8 @@ var run_bikes_built := 0.0
 var regions_open: Dictionary = {}
 ## Laufende Kampagnen: [{"region": id, "time_left": Sekunden}]
 var campaigns: Array[Dictionary] = []
+# Europa (Phase 5): laufendes Amateurrennen-Sponsoring {"region": id, "time_left": s} oder leer
+var sponsoring: Dictionary = {}
 
 # --- Dauerhaft -----------------------------------------------------------------
 
@@ -97,6 +99,7 @@ func reset_run() -> void:
 	run_bikes_built = 0.0
 	regions_open = {}
 	campaigns.clear()
+	sponsoring = {}
 	_last_tier = customer_tier()
 	board.clear()
 	_fill_board()
@@ -577,7 +580,7 @@ func brand_appeal_share(sparte_id: String, region_id := "home") -> float:
 	if generation(sparte_id) <= 0:
 		return 0.0
 	var appeal := brand_quality(sparte_id) * float(Balance.PRICE_CLASSES[price_class(sparte_id)]["appeal"])
-	appeal *= campaign_mult(region_id)
+	appeal *= campaign_mult(region_id) * sponsor_mult(region_id, sparte_id)
 	return appeal / (appeal + float(Balance.sparte(sparte_id)["competitor"]))
 
 
@@ -590,7 +593,8 @@ func production_capacity() -> float:
 	var automation := 1.0 + _knowhow_value("automation") * knowhow_level("automation")
 	var plants := 1.0 + _knowhow_value("second_plant") * knowhow_level("second_plant")
 	var mass := 1.0 + _upgrade_value("mass_production") * upgrade_level("mass_production")
-	return base * automation * plants * mass
+	var europe := 1.0 + _upgrade_value("europe_plant") * upgrade_level("europe_plant")
+	return base * automation * plants * mass * europe
 
 
 ## Verkäufe je Sparte und Region (Räder/s): Nachfrage in allen erschlossenen
@@ -603,7 +607,7 @@ func brand_rates() -> Dictionary:
 		if not region_open(r["id"]):
 			continue
 		for s in Balance.SPARTEN:
-			var d := regional_market(r["id"], s["id"]) * brand_appeal_share(s["id"], r["id"]) * reach
+			var d := regional_market(r["id"], s["id"]) * brand_appeal_share(s["id"], r["id"]) * reach * abroad_factor(r)
 			demand[[r["id"], s["id"]]] = d
 			total_demand += d
 	var fill := 1.0 if total_demand <= 0.0 else minf(1.0, production_capacity() / total_demand)
@@ -627,11 +631,21 @@ func brand_rates() -> Dictionary:
 	}
 
 
-## Phase 3 kennt nur die Heimatregion; ab Phase 4 zählt das ganze Land.
+## Phase 3 kennt nur die Heimatregion; ab Phase 4 zählt das ganze Land, ab Phase 5 Europa.
 func markets_in_scope() -> Array:
+	if phase >= 5:
+		return Balance.REGIONS + Balance.COUNTRIES
 	if phase >= 4:
 		return Balance.REGIONS
 	return [Balance.REGIONS[0]]
+
+
+## Im Ausland: geringere Reichweite (Niederlassungen helfen) und Logistik-Bonus.
+func abroad_factor(market: Dictionary) -> float:
+	if not market.get("abroad", false):
+		return 1.0
+	var reach := minf(1.0, Balance.ABROAD_BASE_REACH + _upgrade_value("branch_offices") * upgrade_level("branch_offices"))
+	return reach * (1.0 + _upgrade_value("eu_logistics") * upgrade_level("eu_logistics"))
 
 
 func regional_market(region_id: String, sparte_id: String) -> float:
@@ -674,7 +688,9 @@ func region_cost(region_id: String) -> BigNumber:
 
 
 func can_open_region(region_id: String) -> bool:
-	return national_open() and not region_open(region_id) and money.gte(region_cost(region_id))
+	var abroad := bool(Balance.region(region_id).get("abroad", false))
+	return (europe_open() if abroad else national_open()) and not region_open(region_id) \
+		and money.gte(region_cost(region_id))
 
 
 func open_region(region_id: String) -> bool:
@@ -719,6 +735,68 @@ func start_campaign(region_id: String) -> bool:
 	return true
 
 
+# --- Europa (Phase 5) ----------------------------------------------------------
+
+func europe_open() -> bool:
+	return phase >= 5
+
+
+## Eigener Anteil am Markt einer Region oder eines Landes.
+func local_share(region_id: String, rates := {}) -> float:
+	if rates.is_empty():
+		rates = brand_rates()
+	return float(rates["regions"].get(region_id, 0.0)) / region_market_size(region_id)
+
+
+## Länder, in denen die Marke mit mindestens PRESENCE_SHARE vertreten ist.
+func countries_present() -> int:
+	if not europe_open():
+		return 0
+	var rates := brand_rates()
+	var count := 0
+	for c in Balance.COUNTRIES:
+		if region_open(c["id"]) and local_share(c["id"], rates) >= Balance.PRESENCE_SHARE:
+			count += 1
+	return count
+
+
+func sponsor_cost(region_id: String) -> BigNumber:
+	return BigNumber.of(Balance.SPONSOR_BASE_COST * float(Balance.region(region_id)["size"]))
+
+
+func can_sponsor(region_id: String) -> bool:
+	return europe_open() and region_open(region_id) and sponsoring.is_empty() and money.gte(sponsor_cost(region_id))
+
+
+func start_sponsoring(region_id: String) -> bool:
+	if not can_sponsor(region_id):
+		return false
+	money = money.sub(sponsor_cost(region_id))
+	sponsoring = {"region": region_id, "time_left": Balance.SPONSOR_DURATION}
+	return true
+
+
+func sponsor_mult(region_id: String, sparte_id: String) -> float:
+	if sponsoring.is_empty() or sponsoring["region"] != region_id or not Balance.SPONSOR_SPARTEN.has(sparte_id):
+		return 1.0
+	return 1.0 + Balance.SPONSOR_EFFECT
+
+
+func _tick_sponsoring(delta: float) -> void:
+	if sponsoring.is_empty():
+		return
+	var active := minf(delta, float(sponsoring["time_left"]))
+	var size := float(Balance.region(sponsoring["region"])["size"])
+	_gain({
+		"money": BigNumber.zero(),
+		"rep": BigNumber.of(Balance.SPONSOR_REP_PER_SECOND * size * active * reputation_mult()),
+		"knowhow": BigNumber.zero(),
+	})
+	sponsoring["time_left"] = float(sponsoring["time_left"]) - delta
+	if sponsoring["time_left"] <= 0.0:
+		sponsoring = {}
+
+
 func _tick_campaigns(delta: float) -> void:
 	for i in range(campaigns.size() - 1, -1, -1):
 		campaigns[i]["time_left"] = float(campaigns[i]["time_left"]) - delta
@@ -729,6 +807,7 @@ func _tick_campaigns(delta: float) -> void:
 func _tick_brand(delta: float) -> void:
 	_add_design_work(design_rate() * delta)
 	_tick_campaigns(delta)
+	_tick_sponsoring(delta)
 	var rates := brand_rates()
 	if rates["total_units"] <= 0.0:
 		return
@@ -743,8 +822,9 @@ func _tick_brand(delta: float) -> void:
 func _offline_brand(seconds: float, report: Dictionary) -> void:
 	if not brand_open():
 		return
-	# Kampagnen laufen offline weiter ab
+	# Kampagnen und Sponsoring laufen offline weiter ab
 	_tick_campaigns(seconds)
+	_tick_sponsoring(seconds)
 	var rates := brand_rates()
 	if rates["total_units"] <= 0.0:
 		return
@@ -836,6 +916,7 @@ func phase_def() -> Dictionary:
 func phase_goal_met() -> bool:
 	var def := phase_def()
 	return reputation.gte(BigNumber.of(def["goal_rep"])) \
+		and countries_present() >= int(def.get("goal_countries", 0)) \
 		and money.gte(BigNumber.of(def["goal_money"])) \
 		and knowhow.gte(BigNumber.of(def.get("goal_knowhow", 0.0))) \
 		and market_share() >= float(def.get("goal_share", 0.0))
@@ -953,6 +1034,7 @@ func to_dict() -> Dictionary:
 		"run_bikes_built": run_bikes_built,
 		"regions_open": regions_open.duplicate(),
 		"campaigns": campaigns.duplicate(true),
+		"sponsoring": sponsoring.duplicate(),
 		"legend": legend.to_save(),
 		"prestige_count": prestige_count,
 		"lifetime_money": lifetime_money.to_save(),
@@ -1033,6 +1115,10 @@ func from_dict(d: Dictionary) -> void:
 		for c in saved_campaigns:
 			if c is Dictionary and not Balance.region(str(c.get("region", ""))).is_empty() and campaigns.size() < Balance.CAMPAIGN_SLOTS:
 				campaigns.append({"region": str(c["region"]), "time_left": maxf(0.0, float(c.get("time_left", 0.0)))})
+	sponsoring = {}
+	var saved_sponsoring: Variant = d.get("sponsoring")
+	if saved_sponsoring is Dictionary and not Balance.region(str(saved_sponsoring.get("region", ""))).is_empty():
+		sponsoring = {"region": str(saved_sponsoring["region"]), "time_left": maxf(0.0, float(saved_sponsoring.get("time_left", 0.0)))}
 	legend = BigNumber.from_save(d.get("legend"))
 	prestige_count = int(d.get("prestige_count", 0))
 	lifetime_money = BigNumber.from_save(d.get("lifetime_money"))

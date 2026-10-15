@@ -172,7 +172,51 @@ const UPGRADES := {
 		"value": 0.4, "base_cost": 2000000.0, "growth": 1.75,
 		"effect": "+%s %% Produktion", "effect_scale": 100.0,
 	},
+	# --- Phase 5: Europa ---
+	"branch_offices": {
+		"name": "Auslandsniederlassungen", "phase": 5, "max_level": 4,
+		"desc": "Eigene Büros im Ausland: mehr Reichweite in allen Ländern.",
+		"value": 0.15, "base_cost": 15000000.0, "growth": 1.9,
+		"effect": "+%s %% Reichweite im Ausland", "effect_scale": 100.0,
+	},
+	"eu_logistics": {
+		"name": "EU-Logistikzentrum", "phase": 5,
+		"desc": "Ein Lager für ganz Europa: mehr Nachfrage im Ausland.",
+		"value": 0.2, "base_cost": 20000000.0, "growth": 1.75,
+		"effect": "+%s %% Nachfrage im Ausland", "effect_scale": 100.0,
+	},
+	"europe_plant": {
+		"name": "Europawerk", "phase": 5,
+		"desc": "Ein weiteres Werk mitten in Europa: mehr Produktion.",
+		"value": 0.5, "base_cost": 30000000.0, "growth": 1.8,
+		"effect": "+%s %% Produktion", "effect_scale": 100.0,
+	},
 }
+
+# --- Europa (Phase 5) -------------------------------------------------------
+
+## Länder mit Eintrittskosten und Spartenschwerpunkt; size in derselben Einheit wie REGIONS.
+const COUNTRIES := [
+	{"id": "dk", "name": "Dänemark", "size": 0.6, "prefs": {"city": 1.9, "trekking": 1.2, "mtb": 0.4}, "open_cost": 12000000.0, "abroad": true},
+	{"id": "be", "name": "Belgien", "size": 1.0, "prefs": {"road": 1.7, "city": 1.2, "mtb": 0.7}, "open_cost": 15000000.0, "abroad": true},
+	{"id": "at", "name": "Österreich", "size": 0.9, "prefs": {"mtb": 1.7, "ebike": 1.4, "city": 0.7}, "open_cost": 15000000.0, "abroad": true},
+	{"id": "ch", "name": "Schweiz", "size": 0.8, "prefs": {"mtb": 1.8, "ebike": 1.5, "city": 0.6}, "open_cost": 20000000.0, "abroad": true},
+	{"id": "nl", "name": "Niederlande", "size": 1.6, "prefs": {"city": 1.8, "ebike": 1.6, "mtb": 0.3, "road": 0.7}, "open_cost": 25000000.0, "abroad": true},
+	{"id": "es", "name": "Spanien", "size": 3.0, "prefs": {"road": 1.4, "mtb": 1.3, "city": 0.8}, "open_cost": 30000000.0, "abroad": true},
+	{"id": "it", "name": "Italien", "size": 3.5, "prefs": {"road": 1.9, "mtb": 1.2, "city": 0.6}, "open_cost": 35000000.0, "abroad": true},
+	{"id": "fr", "name": "Frankreich", "size": 4.0, "prefs": {"road": 1.5, "trekking": 1.2, "ebike": 1.1}, "open_cost": 40000000.0, "abroad": true},
+]
+## Im Ausland startet die Reichweite niedriger; Niederlassungen heben sie an.
+const ABROAD_BASE_REACH := 0.4
+## Präsenz = eigener Marktanteil in einem Land von mindestens diesem Wert.
+const PRESENCE_SHARE := 0.1
+## Amateurrennen-Sponsoring: ein Rennen gleichzeitig, macht Rennräder und
+## Mountainbikes im Land attraktiver und bringt laufend Ruf.
+const SPONSOR_BASE_COST := 1500000.0
+const SPONSOR_DURATION := 180.0
+const SPONSOR_EFFECT := 0.8
+const SPONSOR_SPARTEN := ["road", "mtb"]
+const SPONSOR_REP_PER_SECOND := 2.0
 
 # --- National (Phase 4) -----------------------------------------------------
 
@@ -342,7 +386,11 @@ const PHASES := [
 		"goal_title": "Nummer 1 im ganzen Land",
 		"goal_rep": 0.0, "goal_money": 20000000.0, "goal_share": 0.2,
 	},
-	{"name": "Europa", "playable": false, "goal_title": "Präsenz in Europa", "goal_rep": 0.0, "goal_money": 0.0},
+	{
+		"name": "Europa", "playable": true,
+		"goal_title": "Präsenz in 6 Ländern Europas",
+		"goal_rep": 0.0, "goal_money": 60000000.0, "goal_countries": 6,
+	},
 	{"name": "International", "playable": false, "goal_title": "Continental-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "Continental-Team", "playable": false, "goal_title": "ProTeam-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
 	{"name": "ProTeam", "playable": false, "goal_title": "WorldTour-Lizenz", "goal_rep": 0.0, "goal_money": 0.0},
@@ -357,10 +405,14 @@ static var _templates_by_id := {}
 static var _templates_by_kind := {}
 
 
+## Region im Heimatland oder Land in Europa.
 static func region(id: String) -> Dictionary:
 	for r in REGIONS:
 		if r["id"] == id:
 			return r
+	for c in COUNTRIES:
+		if c["id"] == id:
+			return c
 	return {}
 
 

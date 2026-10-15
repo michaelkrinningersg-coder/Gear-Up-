@@ -139,19 +139,27 @@ func _manage_brand() -> void:
 
 
 func _manage_regions() -> void:
+	var markets: Array = Balance.REGIONS + Balance.COUNTRIES if model.europe_open() else Balance.REGIONS
 	var cheapest := ""
-	for r in Balance.REGIONS:
+	for r in markets:
 		if not model.region_open(r["id"]) and (cheapest == "" or model.region_cost(r["id"]).lt(model.region_cost(cheapest))):
 			cheapest = r["id"]
 	if cheapest != "" and model.region_cost(cheapest).lte(model.money.mul_f(spend_fraction)):
 		model.open_region(cheapest)
 		_mark("Region %s" % cheapest)
 	var biggest := ""
-	for r in Balance.REGIONS:
+	for r in markets:
 		if model.can_start_campaign(r["id"]) and (biggest == "" or float(r["size"]) > float(Balance.region(biggest)["size"])):
 			biggest = r["id"]
 	if biggest != "" and model.campaign_cost(biggest).lte(model.money.mul_f(0.3)):
 		model.start_campaign(biggest)
+	if model.europe_open() and model.sponsoring.is_empty():
+		var target := ""
+		for c in Balance.COUNTRIES:
+			if model.can_sponsor(c["id"]) and (target == "" or float(c["size"]) > float(Balance.region(target)["size"])):
+				target = c["id"]
+		if target != "" and model.sponsor_cost(target).lte(model.money.mul_f(0.3)):
+			model.start_sponsoring(target)
 
 
 func _mark_subgoals() -> void:
@@ -165,6 +173,13 @@ func _mark_subgoals() -> void:
 		_mark("P%d Know-how" % p)
 	if model.market_share() >= float(def.get("goal_share", 0.0)):
 		_mark("P%d Anteil" % p)
+	var goal_countries := int(def.get("goal_countries", 0))
+	if goal_countries > 0:
+		var present := model.countries_present()
+		if present > 0:
+			_mark("P%d Präsenz %d" % [p, present])
+		if present >= goal_countries:
+			_mark("P%d Länder" % p)
 
 
 func _on_tier_changed(tier: int) -> void:

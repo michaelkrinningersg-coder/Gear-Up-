@@ -451,3 +451,66 @@ func test_national_save_and_goal() -> void:
 	check(float(def.get("goal_share", 0.0)) > 0.0, "Phase 4 verlangt Marktanteil")
 	m.wipe()
 	check(m.regions_open.is_empty() and m.campaigns.is_empty(), "Neuer Run ohne Regionen")
+
+
+func _europe_model() -> GameModel:
+	var m := _national_model()
+	m.phase = 5
+	m.money = BigNumber.of(1e9)
+	m.reputation = BigNumber.of(1e5)
+	m.knowhow_levels = {"e_drive": 1, "frame_material": 3}
+	for s in Balance.SPARTEN:
+		m.brand[s["id"]] = {"gen": 3, "class": 0}
+	return m
+
+
+func test_countries() -> void:
+	var nat := _national_model()
+	nat.money = BigNumber.of(1e9)
+	check(not nat.can_open_region("nl"), "Länder erst ab Phase 5")
+	var m := _europe_model()
+	check(m.markets_in_scope().size() == Balance.REGIONS.size() + Balance.COUNTRIES.size(), "Europa im Blick")
+	check_eq(m.countries_present(), 0, "Anfangs keine Präsenz")
+	check(m.open_region("nl"), "Niederlande erschlossen")
+	var rates := m.brand_rates()
+	check(float(rates["regions"].get("nl", 0.0)) > 0.0, "Absatz in den Niederlanden")
+	check(m.regional_market("nl", "city") > m.regional_market("nl", "mtb"), "Niederlande mögen Citybikes")
+	var before := m.local_share("nl")
+	m.upgrades["branch_offices"] = 4
+	check(m.local_share("nl") > before, "Niederlassungen erhöhen die Reichweite im Ausland")
+	check_eq(m.countries_present(), 1 if m.local_share("nl") >= Balance.PRESENCE_SHARE else 0, "Präsenz gezählt")
+
+
+func test_sponsoring() -> void:
+	var m := _europe_model()
+	check(not m.can_sponsor("it"), "Nur in erschlossenen Ländern")
+	m.open_region("it")
+	var road_before := m.brand_appeal_share("road", "it")
+	var city_before := m.brand_appeal_share("city", "it")
+	var rep_before := m.reputation.to_float()
+	check(m.start_sponsoring("it"), "Sponsoring gestartet")
+	check(not m.start_sponsoring("home"), "Nur ein Rennen gleichzeitig")
+	check(m.brand_appeal_share("road", "it") > road_before, "Rennräder attraktiver")
+	check_near(m.brand_appeal_share("city", "it"), city_before, 1e-12, "Citybikes unverändert")
+	m.tick(10.0)
+	check(m.reputation.to_float() > rep_before, "Sponsoring bringt Ruf")
+	var copy := GameModel.new(8)
+	copy.from_dict(JSON.parse_string(JSON.stringify(m.to_dict(), "", false, true)))
+	check_eq(copy.sponsoring.get("region"), "it", "Sponsoring gespeichert")
+	m.tick(Balance.SPONSOR_DURATION)
+	check(m.sponsoring.is_empty(), "Rennen vorbei")
+
+
+func test_europe_goal() -> void:
+	var m := _europe_model()
+	var def := m.phase_def()
+	m.money = BigNumber.of(def["goal_money"])
+	check(not m.phase_goal_met(), "Ohne Präsenz kein Aufstieg")
+	m.upgrades["branch_offices"] = 4
+	m.upgrades["dealers"] = 8
+	m.upgrades["factory"] = 100000
+	for c in Balance.COUNTRIES:
+		m.regions_open[c["id"]] = true
+	m.money = BigNumber.of(def["goal_money"])
+	check(m.countries_present() >= int(def["goal_countries"]), "Präsenz in genug Ländern")
+	check(m.phase_goal_met(), "Ziel erreicht")

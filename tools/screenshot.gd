@@ -36,8 +36,8 @@ func _capture(path: String) -> void:
 
 func _prepare_state(m: GameModel) -> void:
 	m.wipe()
-	m.phase = 4
-	m.money = BigNumber.of(3.2e6)
+	m.phase = 5
+	m.money = BigNumber.of(2.4e7)
 	m.reputation = BigNumber.of(1840.0)
 	m.knowhow = BigNumber.of(37.0)
 	m.run_money = BigNumber.of(2.4e6)
@@ -50,7 +50,10 @@ func _prepare_state(m: GameModel) -> void:
 	m.knowhow_levels = {"routine": 10, "keen_eye": 5, "master_hand": 5, "frame_material": 1, "aero": 1, "unit_cost": 1}
 	m.brand = {"city": {"gen": 2, "class": 0}, "trekking": {"gen": 1, "class": 1}}
 	m.dev_project = {"sparte": "mtb", "work": 1900.0}
-	m.regions_open = {"north": true}
+	m.regions_open = {"north": true, "west": true, "south": true, "east": true, "southwest": true, "dk": true, "be": true}
+	m.upgrades["dealers"] = 6
+	m.upgrades["branch_offices"] = 1
+	m.sponsoring = {"region": "be", "time_left": 95.0}
 	m.campaigns.append({"region": "home", "time_left": 74.0})
 	m.board.clear()
 	m._fill_board()
@@ -66,4 +69,6 @@ func _capture_scrolled(main: Control, out_dir: String) -> void:
 	var page: ScrollContainer = main._pages[main.BRAND_PAGE]
 	page.scroll_vertical = 700
 	await _capture(out_dir.path_join("brand_regions.png"))
+	page.scroll_vertical = 1550
+	await _capture(out_dir.path_join("brand_europe.png"))
 	page.scroll_vertical = 0

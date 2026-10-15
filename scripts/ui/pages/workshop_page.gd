@@ -13,6 +13,9 @@ var _goal_knowhow_bar: ProgressBar
 var _goal_share_row: Control
 var _goal_share_label: Label
 var _goal_share_bar: ProgressBar
+var _goal_countries_row: Control
+var _goal_countries_label: Label
+var _goal_countries_bar: ProgressBar
 var _goal_button: Button
 
 var _active_card: PanelContainer
@@ -81,6 +84,10 @@ func _build_goal() -> PanelContainer:
 	_goal_share_label = share[0]
 	_goal_share_bar = share[1]
 	_goal_share_row = _goal_share_label.get_parent()
+	var countries := _goal_row(v, "globe", UiTheme.KNOWHOW)
+	_goal_countries_label = countries[0]
+	_goal_countries_bar = countries[1]
+	_goal_countries_row = _goal_countries_label.get_parent()
 	_goal_button = UI.button("", _on_goal_pressed)
 	_goal_button.custom_minimum_size.y = 76
 	v.add_child(_goal_button)
@@ -211,6 +218,12 @@ func _refresh_goal() -> void:
 		var share := model.market_share()
 		_goal_share_label.text = "%s / %s Marktanteil" % [NumberFormat.percent(share), NumberFormat.percent(share_goal)]
 		_goal_share_bar.value = clampf(share / share_goal, 0.0, 1.0)
+	var countries_goal := int(def.get("goal_countries", 0))
+	_goal_countries_row.visible = countries_goal > 0
+	if countries_goal > 0:
+		var present := model.countries_present()
+		_goal_countries_label.text = "%d / %d Länder mit Präsenz" % [present, countries_goal]
+		_goal_countries_bar.value = clampf(present / float(countries_goal), 0.0, 1.0)
 	_goal_button.visible = model.phase_goal_met()
 	if model.can_advance_phase():
 		_goal_button.text = str(def["goal_title"])
